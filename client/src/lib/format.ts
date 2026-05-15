@@ -40,8 +40,8 @@ export function formatSAR(
   const decimals = options?.decimals ?? 0;
   const withSuffix = options?.withSuffix !== false;
 
-  const locale = lang === "ar" ? "ar-SA" : "en-US";
-  const formatter = new Intl.NumberFormat(locale, {
+  // Always use Latin (Western) digits for numbers, even in Arabic UI
+  const formatter = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: decimals,
     minimumFractionDigits: decimals,
   });
@@ -50,12 +50,13 @@ export function formatSAR(
   const currency = lang === "ar" ? "ر.س" : "SAR";
 
   if (!withSuffix) return num;
-  return lang === "ar" ? `${num} ${currency}` : `${num} ${currency}`;
+  return `${num} ${currency}`;
 }
 
 export function formatDate(date: string | Date, lang: Lang = "en"): string {
   const d = typeof date === "string" ? new Date(date) : date;
-  const locale = lang === "ar" ? "ar-SA" : "en-US";
+  // Use Latin digits in both languages; only translate month names in Arabic
+  const locale = lang === "ar" ? "ar-SA-u-nu-latn" : "en-US";
   return new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",

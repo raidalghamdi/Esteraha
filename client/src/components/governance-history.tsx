@@ -13,7 +13,7 @@ function relativeTime(iso: string, t: (k: any) => string, lang: "ar" | "en"): st
   const days = Math.floor(hours / 24);
   if (days < 30) return t("days_ago").replace("{n}", String(days));
   // Fall back to date
-  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US");
+  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-US");
 }
 
 function fieldLabel(field: string, t: (k: any) => string): string {

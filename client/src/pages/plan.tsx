@@ -9,7 +9,7 @@ import { fetchExpenses, fetchSettings, computeSummary } from "@/lib/supabaseQuer
 import { useLanguage } from "@/lib/language-context";
 
 function monthLabel(year: number, monthIndex: number, lang: "ar" | "en") {
-  return new Date(year, monthIndex, 1).toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US", { month: "short", year: "2-digit" });
+  return new Date(year, monthIndex, 1).toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-US", { month: "short", year: "2-digit" });
 }
 
 function ymKey(year: number, monthIndex: number) {
@@ -79,7 +79,7 @@ export default function PlanPage() {
   const plannedAnnual = rows.reduce((s, r) => s + r.planned_total, 0);
   const smoothed_monthly_per_member = plannedAnnual / MEMBER_NAMES.length / horizon;
 
-  const planStartLocale = planStart.toLocaleDateString(lang === "ar" ? "ar-SA" : "en-US", { month: "long", year: "numeric" });
+  const planStartLocale = planStart.toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-US", { month: "long", year: "numeric" });
 
   return (
     <div className="p-5 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8">
