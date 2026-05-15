@@ -215,9 +215,8 @@ export async function updateGovernanceField(
   oldValue: string | null,
   note?: string,
 ): Promise<void> {
-  // Insert audit row first
+  // Insert audit row first (id is BIGSERIAL — let the DB assign it)
   const { error: insertErr } = await supabase.from("governance_changes").insert({
-    id: crypto.randomUUID(),
     field,
     old_value: oldValue,
     new_value: newValue,
