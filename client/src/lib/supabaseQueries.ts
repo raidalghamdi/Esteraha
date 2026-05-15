@@ -8,6 +8,34 @@ import type { Member, Settings, Expense, Summary, SummaryMember } from "@shared/
 import { MEMBER_NAMES } from "@shared/schema";
 
 // ──────────────────────────────────────────
+// Types for new tables
+// ──────────────────────────────────────────
+export interface Contribution {
+  id: string;
+  member_name: string;
+  month: string; // YYYY-MM
+  amount: number;
+  payment_method: string;
+  receipt_url: string;
+  receipt_filename: string | null;
+  notes: string | null;
+  status: "Pending" | "Approved" | "Rejected";
+  rejection_reason: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+}
+
+export interface Governance {
+  id: number;
+  budget_controller: string;
+  esteraha_prince: string;
+  charter_text: string | null;
+  charter_accepted_by: string | null;
+  updated_at: string | null;
+}
+
+// ──────────────────────────────────────────
 // Members
 // ──────────────────────────────────────────
 export async function fetchMembers(): Promise<Member[]> {
@@ -62,9 +90,104 @@ export async function deleteExpense(id: string): Promise<void> {
 }
 
 // ──────────────────────────────────────────
+// Contributions
+// ──────────────────────────────────────────
+export async function fetchContributions(): Promise<Contribution[]> {
+  const { data, error } = await supabase
+    .from("contributions")
+    .select("*")
+    .order("submitted_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Contribution[];
+}
+
+export async function fetchContributionsByMember(memberName: string): Promise<Contribution[]> {
+  const { data, error } = await supabase
+    .from("contributions")
+    .select("*")
+    .eq("member_name", memberName)
+    .order("submitted_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Contribution[];
+}
+
+export async function fetchPendingContributions(): Promise<Contribution[]> {
+  const { data, error } = await supabase
+    .from("contributions")
+    .select("*")
+    .eq("status", "Pending")
+    .order("submitted_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Contribution[];
+}
+
+export async function insertContribution(contribution: Omit<Contribution, "id" | "submitted_at" | "reviewed_at" | "reviewed_by" | "rejection_reason">): Promise<Contribution> {
+  const id = crypto.randomUUID();
+  const { data, error } = await supabase
+    .from("contributions")
+    .insert({ ...contribution, id, submitted_at: new Date().toISOString() })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Contribution;
+}
+
+export async function approveContribution(id: string, reviewedBy: string): Promise<void> {
+  const { error } = await supabase
+    .from("contributions")
+    .update({
+      status: "Approved",
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewedBy,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function rejectContribution(id: string, reviewedBy: string, reason: string): Promise<void> {
+  const { error } = await supabase
+    .from("contributions")
+    .update({
+      status: "Rejected",
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewedBy,
+      rejection_reason: reason,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ──────────────────────────────────────────
+// Governance
+// ──────────────────────────────────────────
+export async function fetchGovernance(): Promise<Governance> {
+  const { data, error } = await supabase
+    .from("governance")
+    .select("*")
+    .eq("id", 1)
+    .single();
+  // If governance table doesn't exist yet, return defaults
+  if (error) {
+    return {
+      id: 1,
+      budget_controller: "Raid",
+      esteraha_prince: "Raid",
+      charter_text: null,
+      charter_accepted_by: null,
+      updated_at: null,
+    };
+  }
+  return data as Governance;
+}
+
+// ──────────────────────────────────────────
 // Summary (computed client-side)
 // ──────────────────────────────────────────
-export function computeSummary(expenses: Expense[], settings: Settings): Summary {
+export function computeSummary(
+  expenses: Expense[],
+  settings: Settings,
+  approvedContributions: Contribution[] = []
+): Summary {
   const total_expenses = expenses.reduce((s, e) => s + e.amount, 0);
   const total_paid = expenses
     .filter((e) => e.status === "Paid")
@@ -76,9 +199,15 @@ export function computeSummary(expenses: Expense[], settings: Settings): Summary
   const per_member_share = total_paid / MEMBER_NAMES.length;
 
   const members: SummaryMember[] = MEMBER_NAMES.map((name) => {
-    const paid = expenses
+    // Direct expenses paid by this member
+    const directPaid = expenses
       .filter((e) => e.status === "Paid" && e.paid_by === name)
       .reduce((s, e) => s + e.amount, 0);
+    // Approved monthly contributions by this member
+    const contributionsPaid = approvedContributions
+      .filter((c) => c.status === "Approved" && c.member_name === name)
+      .reduce((s, c) => s + c.amount, 0);
+    const paid = directPaid + contributionsPaid;
     const balance = paid - per_member_share;
     let status: SummaryMember["status"] = "Settled";
     if (balance > 100) status = "Credit";
@@ -114,4 +243,15 @@ export function computeSummary(expenses: Expense[], settings: Settings): Summary
     months_until_2nd_rent,
     monthly_save_needed,
   };
+}
+
+// ──────────────────────────────────────────
+// Monthly contribution target (from settings)
+// ──────────────────────────────────────────
+export function computeMonthlyTarget(settings: Settings): number {
+  const annual_budget =
+    settings.annual_rent +
+    settings.setup_cost +
+    (settings.monthly_operating + settings.worker_monthly) * 12;
+  return Math.round(annual_budget / 9 / 12);
 }

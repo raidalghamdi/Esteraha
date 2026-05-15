@@ -6,12 +6,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppShell } from "@/components/app-shell";
+import { MemberProvider } from "@/lib/member-context";
 import NotFound from "@/pages/not-found";
 import DashboardPage from "@/pages/dashboard";
 import SubmitPage from "@/pages/submit";
 import ExpensesPage from "@/pages/expenses";
 import PlanPage from "@/pages/plan";
 import SettingsPage from "@/pages/settings";
+import ContributePage from "@/pages/contribute";
+import AdminPage from "@/pages/admin";
+import CharterPage from "@/pages/charter";
+import MemberDetailPage from "@/pages/member-detail";
 
 function AppRouter() {
   return (
@@ -21,6 +26,10 @@ function AppRouter() {
       <Route path="/expenses" component={ExpensesPage} />
       <Route path="/plan" component={PlanPage} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/contribute" component={ContributePage} />
+      <Route path="/admin" component={AdminPage} />
+      <Route path="/charter" component={CharterPage} />
+      <Route path="/member/:name" component={MemberDetailPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -30,14 +39,16 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router hook={useHashLocation}>
-            <AppShell>
-              <AppRouter />
-            </AppShell>
-          </Router>
-        </TooltipProvider>
+        <MemberProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router hook={useHashLocation}>
+              <AppShell>
+                <AppRouter />
+              </AppShell>
+            </Router>
+          </TooltipProvider>
+        </MemberProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

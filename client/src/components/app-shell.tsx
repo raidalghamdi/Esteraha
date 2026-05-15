@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -10,11 +10,18 @@ import {
   Sun,
   Menu,
   X,
-  Languages,
+  Wallet,
+  ShieldCheck,
+  BookOpen,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language-context";
+import { useMember } from "@/lib/member-context";
+import { fetchGovernance } from "@/lib/supabaseQueries";
+import { MEMBER_NAMES, type MemberName } from "@shared/schema";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
 
 function Logo({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { t } = useLanguage();
@@ -45,13 +52,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { t, lang, setLang } = useLanguage();
+  const { currentMember, setCurrentMember } = useMember();
+
+  const { data: governance } = useQuery({
+    queryKey: ["governance"],
+    queryFn: fetchGovernance,
+  });
+
+  const budgetController = governance?.budget_controller ?? "Raid";
+  const isAdmin = !!currentMember && currentMember === budgetController;
 
   const NAV = [
     { href: "/", label: t("nav_dashboard"), icon: LayoutDashboard, testId: "link-dashboard" },
     { href: "/submit", label: t("nav_submit"), icon: PlusCircle, testId: "link-submit" },
+    { href: "/contribute", label: t("nav_contribute"), icon: Wallet, testId: "link-contribute" },
     { href: "/expenses", label: t("nav_expenses"), icon: ReceiptText, testId: "link-expenses" },
     { href: "/plan", label: t("nav_plan"), icon: CalendarDays, testId: "link-plan" },
+    { href: "/charter", label: t("nav_charter"), icon: BookOpen, testId: "link-charter" },
     { href: "/settings", label: t("nav_settings"), icon: SettingsIcon, testId: "link-settings" },
+    ...(isAdmin ? [{ href: "/admin", label: t("nav_admin"), icon: ShieldCheck, testId: "link-admin" }] : []),
   ];
 
   function toggleLang() {
@@ -84,11 +103,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </nav>
   );
 
+  // Member picker for sidebar
+  const memberPicker = (
+    <div className="flex flex-col gap-1.5 pb-3 border-b border-white/10">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-secondary/60 font-semibold px-1">
+        {t("i_am")}
+      </div>
+      <Select
+        value={currentMember ?? ""}
+        onValueChange={(v) => setCurrentMember(v as MemberName || null)}
+      >
+        <SelectTrigger className="bg-white/5 border-white/10 text-white h-8 text-xs hover:bg-white/10">
+          <SelectValue placeholder={t("select_member")} />
+        </SelectTrigger>
+        <SelectContent>
+          {MEMBER_NAMES.map((m) => (
+            <SelectItem key={m} value={m} className="text-sm">{m}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-background text-foreground">
       {/* Sidebar (desktop) — use start-0 so it's on the correct side in RTL */}
-      <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col bg-sidebar text-sidebar-foreground border-e border-sidebar-border p-5 gap-6 sticky top-0 h-screen">
-        {/* Language toggle at top */}
+      <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col bg-sidebar text-sidebar-foreground border-e border-sidebar-border p-5 gap-4 sticky top-0 h-screen">
+        {/* Logo + language toggle at top */}
         <div className="flex items-start justify-between gap-2">
           <Logo variant="dark" />
           <button
@@ -101,6 +142,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {t("lang_toggle")}
           </button>
         </div>
+
+        {/* Member picker */}
+        {memberPicker}
 
         <div className="flex-1">{navList}</div>
 
@@ -156,7 +200,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {mobileOpen && (
-        <div className="md:hidden bg-brand-dark text-white px-4 py-4 border-b border-white/10">{navList}</div>
+        <div className="md:hidden bg-brand-dark text-white px-4 py-4 border-b border-white/10 space-y-3">
+          {memberPicker}
+          {navList}
+        </div>
       )}
 
       <main className="flex-1 min-w-0">{children}</main>

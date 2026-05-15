@@ -1,13 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { Link } from "wouter";
-import { ArrowRight, ReceiptText, Users, Wallet, CalendarClock, TrendingUp } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { ArrowRight, ReceiptText, Users, Wallet, CalendarClock, TrendingUp, Info } from "lucide-react";
 import type { Summary, Expense } from "@shared/schema";
 import { formatSAR, formatDate } from "@/lib/format";
 import { AvatarCircle } from "@/components/avatar-circle";
 import { cn } from "@/lib/utils";
-import { fetchExpenses, fetchSettings, computeSummary } from "@/lib/supabaseQueries";
+import { fetchExpenses, fetchSettings, fetchContributions, computeSummary } from "@/lib/supabaseQueries";
 import { useLanguage } from "@/lib/language-context";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function StatusPill({ status }: { status: "Credit" | "Owes group" | "Settled" }) {
   const { t } = useLanguage();
@@ -31,8 +39,68 @@ function StatusPill({ status }: { status: "Credit" | "Owes group" | "Settled" })
   );
 }
 
+// ─── KPI Detail Dialog ─────────────────────────────────────────────────────
+interface KpiDialogProps {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  value: string;
+  description?: string;
+  expenses?: Expense[];
+  lang: string;
+  t: (key: any) => string;
+}
+
+function KpiDialog({ open, onClose, title, value, description, expenses, lang, t }: KpiDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </DialogHeader>
+        <div className="kpi-number text-4xl text-primary mt-2">{value}</div>
+        {expenses && expenses.length > 0 && (
+          <div className="mt-4 max-h-64 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                  <th className="pb-2 pe-2 font-semibold text-start">{t("col_date" as any)}</th>
+                  <th className="pb-2 px-2 font-semibold text-start">{t("col_description" as any)}</th>
+                  <th className="pb-2 ps-2 font-semibold text-end">{t("col_amount" as any)}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e.id} className="border-b border-border/40 last:border-0">
+                    <td className="py-2 pe-2 text-muted-foreground">{formatDate(e.date, lang)}</td>
+                    <td className="py-2 px-2 font-medium truncate max-w-[140px]">{e.description}</td>
+                    <td className="py-2 ps-2 text-end tabular font-display font-semibold">{formatSAR(e.amount, {}, lang)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="pt-3 border-t border-border">
+          <Link
+            href="/expenses"
+            onClick={onClose}
+            className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1"
+          >
+            {t("recent_view_all")}
+            {lang === "ar" ? <ArrowRight className="h-3 w-3 rotate-180" /> : <ArrowRight className="h-3 w-3" />}
+          </Link>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function DashboardPage() {
   const { t, lang } = useLanguage();
+  const [, navigate] = useLocation();
+  const [kpiDialog, setKpiDialog] = useState<{ title: string; value: string; description?: string; expenses?: Expense[] } | null>(null);
 
   const { data: expenses, isLoading: loadingExpenses } = useQuery<Expense[]>({
     queryKey: ["expenses"],
@@ -42,11 +110,20 @@ export default function DashboardPage() {
     queryKey: ["settings"],
     queryFn: fetchSettings,
   });
+  const { data: allContributions = [] } = useQuery({
+    queryKey: ["contributions"],
+    queryFn: fetchContributions,
+  });
+
+  const approvedContributions = useMemo(
+    () => allContributions.filter((c) => c.status === "Approved"),
+    [allContributions]
+  );
 
   const summary = useMemo<Summary | null>(() => {
     if (!expenses || !settings) return null;
-    return computeSummary(expenses, settings);
-  }, [expenses, settings]);
+    return computeSummary(expenses, settings, approvedContributions);
+  }, [expenses, settings, approvedContributions]);
 
   const isLoading = loadingExpenses || loadingSettings;
 
@@ -65,6 +142,12 @@ export default function DashboardPage() {
 
   const recent = (expenses ?? []).slice(0, 5);
   const expenseCount = expenses?.length ?? 0;
+  const paidExpenses = (expenses ?? []).filter((e) => e.status === "Paid");
+  const unpaidExpenses = (expenses ?? []).filter((e) => e.status === "Unpaid");
+
+  function openKpi(title: string, value: string, description?: string, exps?: Expense[]) {
+    setKpiDialog({ title, value, description, expenses: exps });
+  }
 
   return (
     <div className="p-5 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8">
@@ -91,20 +174,44 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-6 md:gap-10">
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-secondary/70 font-medium">{t("hero_annual_budget")}</div>
-                <div className="kpi-number text-4xl md:text-5xl mt-2 text-primary" data-testid="kpi-annual-budget">
-                  {formatSAR(summary.first_year_total, { withSuffix: false }, lang)}
-                </div>
-                <div className="text-xs text-secondary/70 mt-1.5 font-medium">{t("hero_year1_commitment")}</div>
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-secondary/70 font-medium">{t("hero_per_member")}</div>
-                <div className="kpi-number text-4xl md:text-5xl mt-2 text-white" data-testid="kpi-per-share">
-                  {formatSAR(summary.per_member_share, { decimals: 0, withSuffix: false }, lang)}
-                </div>
-                <div className="text-xs text-secondary/70 mt-1.5 font-medium">{t("hero_per_member_hint")}</div>
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="cursor-pointer group"
+                    onClick={() => openKpi(
+                      t("hero_annual_budget"),
+                      formatSAR(summary.first_year_total, {}, lang),
+                      lang === "ar" ? "الإيجار السنوي + تكلفة التجهيز + التشغيل + العامل" : "Annual rent + setup + operating + worker",
+                    )}
+                  >
+                    <div className="text-[11px] uppercase tracking-wider text-secondary/70 font-medium group-hover:text-white/90 transition-colors">{t("hero_annual_budget")}</div>
+                    <div className="kpi-number text-4xl md:text-5xl mt-2 text-primary group-hover:brightness-110 transition-all" data-testid="kpi-annual-budget">
+                      {formatSAR(summary.first_year_total, { withSuffix: false }, lang)}
+                    </div>
+                    <div className="text-xs text-secondary/70 mt-1.5 font-medium">{t("hero_year1_commitment")}</div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>{lang === "ar" ? "انقر للتفاصيل" : "Click for details"}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="cursor-pointer group"
+                    onClick={() => openKpi(
+                      t("hero_per_member"),
+                      formatSAR(summary.per_member_share, { decimals: 0 }, lang),
+                      lang === "ar" ? "المدفوع الكلي ÷ 9 أعضاء" : "Total paid ÷ 9 members",
+                    )}
+                  >
+                    <div className="text-[11px] uppercase tracking-wider text-secondary/70 font-medium group-hover:text-white/90 transition-colors">{t("hero_per_member")}</div>
+                    <div className="kpi-number text-4xl md:text-5xl mt-2 text-white group-hover:brightness-110 transition-all" data-testid="kpi-per-share">
+                      {formatSAR(summary.per_member_share, { decimals: 0, withSuffix: false }, lang)}
+                    </div>
+                    <div className="text-xs text-secondary/70 mt-1.5 font-medium">{t("hero_per_member_hint")}</div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>{lang === "ar" ? "انقر للتفاصيل" : "Click for details"}</TooltipContent>
+              </Tooltip>
             </div>
 
             <div className="mt-7 flex flex-wrap items-center gap-3 pt-5 border-t border-white/10">
@@ -127,41 +234,68 @@ export default function DashboardPage() {
         </div>
 
         {/* Right rail: total paid */}
-        <div className="rounded-2xl premium-card border border-card-border p-6 shadow-sm flex flex-col">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">{t("kpi_total_paid")}</span>
-            <span className="rounded-md p-1.5 bg-primary/12 text-primary">
-              <TrendingUp className="h-4 w-4" />
-            </span>
-          </div>
-          <div className="kpi-number text-4xl md:text-5xl mt-3 text-foreground" data-testid="kpi-total-paid">
-            {formatSAR(summary.total_paid, { withSuffix: false }, lang)}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1.5 font-medium">
-            {lang === "ar"
-              ? `${formatSAR(0, { withSuffix: false }, lang).replace("0", String(expenseCount))} ${t("kpi_entries_count")}`
-              : `${t("currency")} · across ${expenseCount} entries`}
-          </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className="rounded-2xl premium-card border border-card-border p-6 shadow-sm flex flex-col cursor-pointer hover:shadow-md hover:border-primary/30 transition-all"
+              onClick={() => openKpi(
+                t("kpi_total_paid"),
+                formatSAR(summary.total_paid, {}, lang),
+                lang === "ar" ? "مجموع المصاريف المدفوعة + المساهمات المعتمدة" : "Sum of paid expenses + approved contributions",
+                paidExpenses
+              )}
+            >
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-[11px] uppercase tracking-wider font-semibold">{t("kpi_total_paid")}</span>
+                <span className="rounded-md p-1.5 bg-primary/12 text-primary">
+                  <TrendingUp className="h-4 w-4" />
+                </span>
+              </div>
+              <div className="kpi-number text-4xl md:text-5xl mt-3 text-foreground" data-testid="kpi-total-paid">
+                {formatSAR(summary.total_paid, { withSuffix: false }, lang)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1.5 font-medium">
+                {lang === "ar"
+                  ? `${expenseCount} ${t("kpi_entries_count")}`
+                  : `${t("currency")} · across ${expenseCount} entries`}
+              </div>
 
-          <div className="mt-auto pt-5 grid grid-cols-2 gap-4 border-t border-border">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{t("kpi_second_rent")}</div>
-              <div className="font-display font-bold text-lg mt-1 tabular" data-testid="kpi-second-rent">
-                {formatSAR(summary.second_rent_due, {}, lang)}
-              </div>
-              <div className="text-[10px] text-accent font-semibold mt-0.5">
-                {t("kpi_in_months").replace("{n}", String(summary.months_until_2nd_rent))}
+              <div className="mt-auto pt-5 grid grid-cols-2 gap-4 border-t border-border">
+                <div
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openKpi(t("kpi_second_rent"), formatSAR(summary.second_rent_due, {}, lang),
+                      t("kpi_in_months").replace("{n}", String(summary.months_until_2nd_rent)));
+                  }}
+                >
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{t("kpi_second_rent")}</div>
+                  <div className="font-display font-bold text-lg mt-1 tabular" data-testid="kpi-second-rent">
+                    {formatSAR(summary.second_rent_due, {}, lang)}
+                  </div>
+                  <div className="text-[10px] text-accent font-semibold mt-0.5">
+                    {t("kpi_in_months").replace("{n}", String(summary.months_until_2nd_rent))}
+                  </div>
+                </div>
+                <div
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openKpi(t("kpi_monthly_save"), formatSAR(summary.monthly_save_needed, { decimals: 0 }, lang),
+                      t("kpi_per_member"));
+                  }}
+                >
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{t("kpi_monthly_save")}</div>
+                  <div className="font-display font-bold text-lg mt-1 tabular" data-testid="kpi-monthly-save">
+                    {formatSAR(summary.monthly_save_needed, { decimals: 0 }, lang)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground font-medium mt-0.5">{t("kpi_per_member")}</div>
+                </div>
               </div>
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{t("kpi_monthly_save")}</div>
-              <div className="font-display font-bold text-lg mt-1 tabular" data-testid="kpi-monthly-save">
-                {formatSAR(summary.monthly_save_needed, { decimals: 0 }, lang)}
-              </div>
-              <div className="text-[10px] text-muted-foreground font-medium mt-0.5">{t("kpi_per_member")}</div>
-            </div>
-          </div>
-        </div>
+          </TooltipTrigger>
+          <TooltipContent>{lang === "ar" ? "انقر للتفاصيل" : "Click for details"}</TooltipContent>
+        </Tooltip>
       </section>
 
       {/* Secondary KPIs */}
@@ -172,6 +306,7 @@ export default function DashboardPage() {
           value={formatSAR(summary.annual_budget, {}, lang)}
           hint={t("kpi_rent_operating_worker")}
           testId="kpi-annual"
+          onClick={() => openKpi(t("kpi_annual_budget"), formatSAR(summary.annual_budget, {}, lang), t("kpi_rent_operating_worker"))}
         />
         <KpiCard
           icon={<ReceiptText className="h-4 w-4" />}
@@ -179,6 +314,8 @@ export default function DashboardPage() {
           value={formatSAR(summary.total_expenses, {}, lang)}
           hint={t("kpi_ledger_entries").replace("{n}", String(expenseCount))}
           testId="kpi-total-expenses"
+          onClick={() => openKpi(t("kpi_total_recorded"), formatSAR(summary.total_expenses, {}, lang),
+            t("kpi_ledger_entries").replace("{n}", String(expenseCount)), expenses ?? [])}
         />
         <KpiCard
           icon={<CalendarClock className="h-4 w-4" />}
@@ -187,6 +324,9 @@ export default function DashboardPage() {
           hint={summary.total_unpaid > 0 ? t("kpi_unpaid_entries") : t("kpi_no_unpaid")}
           testId="kpi-unpaid"
           tone={summary.total_unpaid > 0 ? "warn" : "neutral"}
+          onClick={() => openKpi(t("kpi_total_unpaid"), formatSAR(summary.total_unpaid, {}, lang),
+            summary.total_unpaid > 0 ? t("kpi_unpaid_entries") : t("kpi_no_unpaid"),
+            unpaidExpenses)}
         />
       </section>
 
@@ -215,13 +355,18 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {summary.members.map((m) => (
-                  <tr key={m.name} className="border-b border-border/60 last:border-0 hover:bg-muted/30 transition-colors">
+                  <tr
+                    key={m.name}
+                    className="border-b border-border/60 last:border-0 hover:bg-muted/30 transition-colors cursor-pointer group"
+                    onClick={() => navigate(`/member/${encodeURIComponent(m.name)}`)}
+                  >
                     <td className="py-3 pe-3">
                       <div className="flex items-center gap-3">
                         <AvatarCircle name={m.name} size={32} />
-                        <span className="font-semibold" data-testid={`text-member-${m.name}`}>
+                        <span className="font-semibold group-hover:text-primary transition-colors" data-testid={`text-member-${m.name}`}>
                           {m.name}
                         </span>
+                        <ArrowRight className={cn("h-3 w-3 text-muted-foreground/50 hidden sm:block group-hover:text-primary transition-colors", lang === "ar" && "rotate-180")} />
                       </div>
                     </td>
                     <td className="py-3 px-3 text-end tabular font-display font-semibold">{formatSAR(m.paid, {}, lang)}</td>
@@ -297,6 +442,20 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
+
+      {/* KPI Detail Dialog */}
+      {kpiDialog && (
+        <KpiDialog
+          open={!!kpiDialog}
+          onClose={() => setKpiDialog(null)}
+          title={kpiDialog.title}
+          value={kpiDialog.value}
+          description={kpiDialog.description}
+          expenses={kpiDialog.expenses}
+          lang={lang}
+          t={t}
+        />
+      )}
     </div>
   );
 }
@@ -308,6 +467,7 @@ function KpiCard({
   hint,
   testId,
   tone,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -315,14 +475,17 @@ function KpiCard({
   hint?: string;
   testId?: string;
   tone?: "warn" | "neutral";
+  onClick?: () => void;
 }) {
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card p-5 shadow-sm",
+        "rounded-xl border bg-card p-5 shadow-sm transition-all",
         tone === "warn" ? "border-warning/40 bg-warning/5" : "border-card-border",
+        onClick && "cursor-pointer hover:shadow-md hover:border-primary/30 hover:scale-[1.01]",
       )}
       data-testid={testId}
+      onClick={onClick}
     >
       <div className="flex items-center justify-between text-muted-foreground">
         <span className="text-[11px] uppercase tracking-wider font-semibold">{label}</span>
@@ -337,6 +500,12 @@ function KpiCard({
       </div>
       <div className="kpi-number text-3xl md:text-4xl mt-3 text-foreground">{value}</div>
       {hint && <div className="text-xs text-muted-foreground mt-2 font-medium">{hint}</div>}
+      {onClick && (
+        <div className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1">
+          <Info className="h-2.5 w-2.5" />
+          {label}
+        </div>
+      )}
     </div>
   );
 }
