@@ -61,5 +61,5 @@ npm run build
 
 ## Deployed At
 
-- **Live site**: _TODO_
-- **GitHub**: https://github.com/raid-a-alghamdi/Esteraha
+- **Live site**: https://esteraha.vercel.app
+- **GitHub**: https://github.com/raidalghamdi/Esteraha
