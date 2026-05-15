@@ -24,7 +24,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Check, X, ShieldCheck, User, FileText, Image as ImageIcon } from "lucide-react";
+import { Check, X, ShieldCheck, FileText, Image as ImageIcon, History } from "lucide-react";
+import { EditableGovernanceCard } from "@/components/governance-card";
+import { GovernanceHistory } from "@/components/governance-history";
 
 function StatusBadge({ status }: { status: string }) {
   const { t } = useLanguage();
@@ -211,23 +213,51 @@ export default function AdminPage() {
           <ShieldCheck className="h-5 w-5 text-primary" />
           <h2 className="font-display text-lg font-bold">{t("governance_settings")}</h2>
         </div>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="rounded-xl bg-muted/50 p-4 border border-border">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">{t("budget_controller_label")}</div>
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-primary" />
-              <span className="font-bold text-lg">{governance?.budget_controller ?? "Raid"}</span>
-            </div>
-          </div>
-          <div className="rounded-xl bg-muted/50 p-4 border border-border">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">{t("esteraha_prince_label")}</div>
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-accent" />
-              <span className="font-bold text-lg">{governance?.esteraha_prince ?? "Raid"}</span>
-            </div>
-          </div>
+        {(() => {
+          const prince = governance?.esteraha_prince ?? "Raid";
+          const controller = governance?.budget_controller ?? "Raid";
+          const isPrince = !!currentMember && currentMember === prince;
+          return (
+            <>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <EditableGovernanceCard
+                  label={t("esteraha_prince_label")}
+                  field="esteraha_prince"
+                  value={prince}
+                  canEdit={isPrince}
+                  changedBy={currentMember ?? "unknown"}
+                  accent="accent"
+                  editLabel={t("edit_prince")}
+                  testIdPrefix="governance-prince"
+                />
+                <EditableGovernanceCard
+                  label={t("budget_controller_label")}
+                  field="budget_controller"
+                  value={controller}
+                  canEdit={isPrince}
+                  changedBy={currentMember ?? "unknown"}
+                  accent="primary"
+                  editLabel={t("edit_controller")}
+                  testIdPrefix="governance-controller"
+                />
+              </div>
+              {!isPrince && (
+                <p className="text-xs text-muted-foreground mt-4 leading-relaxed">
+                  {t("only_prince_can_edit")}
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </section>
+
+      {/* Section 2b: Governance History */}
+      <section className="rounded-2xl border border-card-border bg-card p-5 md:p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <History className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-display text-lg font-bold">{t("governance_history")}</h2>
         </div>
-        <p className="text-xs text-muted-foreground mt-4 leading-relaxed">{t("governance_note")}</p>
+        <GovernanceHistory limit={10} />
       </section>
 
       {/* Section 3: Recently Reviewed */}

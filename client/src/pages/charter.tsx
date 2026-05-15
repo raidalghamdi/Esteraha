@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useLanguage } from "@/lib/language-context";
 import { fetchGovernance } from "@/lib/supabaseQueries";
 import { MEMBER_NAMES } from "@shared/schema";
-import { Crown, Shield, Users, BookOpen } from "lucide-react";
+import { Crown, Shield, Users, BookOpen, History } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GovernanceHistory } from "@/components/governance-history";
 
 function Section({
   icon,
@@ -143,6 +144,11 @@ export default function CharterPage() {
             <div className="font-bold text-lg">{governance?.budget_controller ?? "Raid"}</div>
           </div>
         </div>
+      </Section>
+
+      {/* Recent Governance Changes (mini history) */}
+      <Section icon={<History className="h-5 w-5" />} title={t("recent_governance_changes")}>
+        <GovernanceHistory limit={5} compact />
       </Section>
 
       {/* Version note */}

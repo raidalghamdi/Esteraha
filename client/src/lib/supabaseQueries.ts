@@ -35,6 +35,18 @@ export interface Governance {
   updated_at: string | null;
 }
 
+export type GovernanceField = "budget_controller" | "esteraha_prince" | "charter_text";
+
+export interface GovernanceChange {
+  id: string;
+  field: GovernanceField;
+  old_value: string | null;
+  new_value: string | null;
+  changed_by: string | null;
+  changed_at: string;
+  note: string | null;
+}
+
 // ──────────────────────────────────────────
 // Members
 // ──────────────────────────────────────────
@@ -178,6 +190,84 @@ export async function fetchGovernance(): Promise<Governance> {
     };
   }
   return data as Governance;
+}
+
+// ──────────────────────────────────────────
+// Governance Changes (audit log)
+// ──────────────────────────────────────────
+export async function fetchGovernanceChanges(limit = 10): Promise<GovernanceChange[]> {
+  const { data, error } = await supabase
+    .from("governance_changes")
+    .select("*")
+    .order("changed_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.warn("fetchGovernanceChanges:", error.message);
+    return [];
+  }
+  return (data ?? []) as GovernanceChange[];
+}
+
+export async function updateGovernanceField(
+  field: GovernanceField,
+  newValue: string,
+  changedBy: string,
+  oldValue: string | null,
+  note?: string,
+): Promise<void> {
+  // Insert audit row first
+  const { error: insertErr } = await supabase.from("governance_changes").insert({
+    id: crypto.randomUUID(),
+    field,
+    old_value: oldValue,
+    new_value: newValue,
+    changed_by: changedBy,
+    changed_at: new Date().toISOString(),
+    note: note ?? null,
+  });
+  if (insertErr) throw new Error(insertErr.message);
+
+  // Then update governance row
+  const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+  patch[field] = newValue;
+  const { error: updateErr } = await supabase
+    .from("governance")
+    .update(patch)
+    .eq("id", 1);
+  if (updateErr) throw new Error(updateErr.message);
+}
+
+// ──────────────────────────────────────────
+// Receipt attach (existing expenses + contributions)
+// ──────────────────────────────────────────
+export async function uploadReceiptFile(file: File, folder: "expenses" | "contributions"): Promise<{ publicUrl: string; filename: string }> {
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("File too large (max 5MB)");
+  }
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
+  const path = `${folder}/${crypto.randomUUID()}.${ext}`;
+  const { error: uploadErr } = await supabase.storage
+    .from("receipts")
+    .upload(path, file, { contentType: file.type });
+  if (uploadErr) throw new Error(uploadErr.message);
+  const { data: pub } = supabase.storage.from("receipts").getPublicUrl(path);
+  return { publicUrl: pub.publicUrl, filename: file.name };
+}
+
+export async function attachReceiptToExpense(expenseId: string, publicUrl: string, filename: string): Promise<void> {
+  const { error } = await supabase
+    .from("expenses")
+    .update({ receipt_url: publicUrl, receipt_filename: filename })
+    .eq("id", expenseId);
+  if (error) throw new Error(error.message);
+}
+
+export async function attachReceiptToContribution(contributionId: string, publicUrl: string, filename: string): Promise<void> {
+  const { error } = await supabase
+    .from("contributions")
+    .update({ receipt_url: publicUrl, receipt_filename: filename })
+    .eq("id", contributionId);
+  if (error) throw new Error(error.message);
 }
 
 // ──────────────────────────────────────────

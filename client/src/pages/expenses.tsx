@@ -13,7 +13,9 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { useLanguage } from "@/lib/language-context";
-import { fetchExpenses, deleteExpense } from "@/lib/supabaseQueries";
+import { useMember } from "@/lib/member-context";
+import { fetchExpenses, deleteExpense, fetchGovernance } from "@/lib/supabaseQueries";
+import { AttachReceiptDialog } from "@/components/attach-receipt-dialog";
 
 const ALL = "__ALL__";
 
@@ -52,10 +54,13 @@ function StatusPill({ status }: { status: string }) {
 
 export default function ExpensesPage() {
   const { t, lang } = useLanguage();
+  const { currentMember } = useMember();
   const { data: expenses, isLoading } = useQuery<Expense[]>({
     queryKey: ["expenses"],
     queryFn: fetchExpenses,
   });
+  const { data: governance } = useQuery({ queryKey: ["governance"], queryFn: fetchGovernance });
+  const budgetController = governance?.budget_controller ?? "Raid";
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL);
   const [paidBy, setPaidBy] = useState<string>(ALL);
@@ -168,16 +173,28 @@ export default function ExpensesPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((e) => (
-            <ExpenseCard key={e.id} expense={e} onDelete={() => del.mutate(e.id)} deleting={del.isPending} />
-          ))}
+          {filtered.map((e) => {
+            const canAttach =
+              !e.receipt_url &&
+              !!currentMember &&
+              (currentMember === e.paid_by || currentMember === budgetController);
+            return (
+              <ExpenseCard
+                key={e.id}
+                expense={e}
+                onDelete={() => del.mutate(e.id)}
+                deleting={del.isPending}
+                canAttach={canAttach}
+              />
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function ExpenseCard({ expense, onDelete, deleting }: { expense: Expense; onDelete: () => void; deleting: boolean }) {
+function ExpenseCard({ expense, onDelete, deleting, canAttach }: { expense: Expense; onDelete: () => void; deleting: boolean; canAttach: boolean }) {
   const { t, lang } = useLanguage();
   // receipt_url is now a full Supabase public URL — use directly
   const receiptUrl = expense.receipt_url ?? null;
@@ -263,6 +280,14 @@ function ExpenseCard({ expense, onDelete, deleting }: { expense: Expense; onDele
               >
                 <ExternalLink className="h-4 w-4" />
               </a>
+            )}
+            {!receiptUrl && canAttach && (
+              <AttachReceiptDialog
+                target="expense"
+                rowId={expense.id}
+                variant="icon"
+                triggerTestId={`button-attach-receipt-${expense.id}`}
+              />
             )}
             <button
               type="button"

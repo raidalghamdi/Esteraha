@@ -2,13 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link, useParams } from "wouter";
 import { useLanguage } from "@/lib/language-context";
+import { useMember } from "@/lib/member-context";
 import {
   fetchExpenses,
   fetchSettings,
   fetchContributionsByMember,
+  fetchGovernance,
   computeSummary,
-  type Contribution,
 } from "@/lib/supabaseQueries";
+import { AttachReceiptDialog } from "@/components/attach-receipt-dialog";
 import { MEMBER_NAMES, type MemberName } from "@shared/schema";
 import { formatSAR, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -35,6 +37,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function MemberDetailPage() {
   const { t, lang } = useLanguage();
+  const { currentMember } = useMember();
   const params = useParams<{ name: string }>();
   const memberName = decodeURIComponent(params.name ?? "");
 
@@ -53,6 +56,8 @@ export default function MemberDetailPage() {
     queryFn: () => fetchContributionsByMember(memberName),
     enabled: isValidMember,
   });
+  const { data: governance } = useQuery({ queryKey: ["governance"], queryFn: fetchGovernance });
+  const budgetController = governance?.budget_controller ?? "Raid";
 
   const approvedContributions = useMemo(
     () => contributions.filter((c) => c.status === "Approved"),
@@ -169,6 +174,13 @@ export default function MemberDetailPage() {
                           )}
                           {t("view_receipt")}
                         </a>
+                      ) : !!currentMember && (currentMember === e.paid_by || currentMember === budgetController) ? (
+                        <AttachReceiptDialog
+                          target="expense"
+                          rowId={e.id}
+                          variant="button"
+                          triggerTestId={`button-attach-receipt-${e.id}`}
+                        />
                       ) : (
                         <span className="text-muted-foreground text-xs">{t("no_receipt")}</span>
                       )}
@@ -204,7 +216,12 @@ export default function MemberDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {contributions.map((c) => (
+                {contributions.map((c) => {
+                  const canAttachContrib =
+                    !c.receipt_url &&
+                    !!currentMember &&
+                    (currentMember === c.member_name || currentMember === budgetController);
+                  return (
                   <tr key={c.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="py-3 px-5 font-semibold font-mono">{c.month}</td>
                     <td className="py-3 px-3 text-end tabular font-display font-bold">{formatSAR(c.amount, {}, lang)}</td>
@@ -214,10 +231,36 @@ export default function MemberDetailPage() {
                        : t("pay_card")}
                     </td>
                     <td className="py-3 px-5 text-end">
-                      <StatusBadge status={c.status} />
+                      <div className="inline-flex items-center gap-2">
+                        {c.receipt_url ? (
+                          <a
+                            href={c.receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
+                            aria-label={t("view_receipt")}
+                          >
+                            {c.receipt_filename?.endsWith(".pdf") ? (
+                              <FileText className="h-3.5 w-3.5" />
+                            ) : (
+                              <ImageIcon className="h-3.5 w-3.5" />
+                            )}
+                          </a>
+                        ) : canAttachContrib ? (
+                          <AttachReceiptDialog
+                            target="contribution"
+                            rowId={c.id}
+                            variant="icon"
+                            triggerTestId={`button-attach-contrib-${c.id}`}
+                            extraInvalidate={[["contributions", memberName]]}
+                          />
+                        ) : null}
+                        <StatusBadge status={c.status} />
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
