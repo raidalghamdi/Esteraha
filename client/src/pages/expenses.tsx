@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import type { Expense, CategorySetting } from "@shared/schema";
-import { CATEGORIES, MEMBER_NAMES } from "@shared/schema";
+import { MEMBER_NAMES } from "@shared/schema";
 import { formatSAR, formatDate } from "@/lib/format";
 import { AvatarCircle } from "@/components/avatar-circle";
 import { Input } from "@/components/ui/input";
@@ -14,21 +14,13 @@ import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { useLanguage } from "@/lib/language-context";
 import { useMember } from "@/lib/member-context";
-import { fetchExpenses, deleteExpense, fetchGovernance, fetchCategorySettings, getEffectivelyIncluded } from "@/lib/supabaseQueries";
+import { fetchExpenses, deleteExpense, fetchGovernance, fetchCategorySettings, getEffectivelyIncluded, categoryLabel } from "@/lib/supabaseQueries";
 import { AttachReceiptDialog } from "@/components/attach-receipt-dialog";
 
 const ALL = "__ALL__";
 
-const CATEGORY_LABEL_KEYS: Record<string, string> = {
-  Rent: "cat_rent",
-  Setup: "cat_setup",
-  Operating: "cat_operating",
-  Worker: "cat_worker",
-  Other: "cat_other",
-};
-
-function CategoryBadge({ category }: { category: string }) {
-  const { t } = useLanguage();
+function CategoryBadge({ category, categorySettings }: { category: string; categorySettings: CategorySetting[] }) {
+  const { t, lang } = useLanguage();
   const tone: Record<string, string> = {
     Rent: "bg-primary/12 text-primary border-primary/25",
     Setup: "bg-accent/15 text-accent border-accent/30",
@@ -36,10 +28,11 @@ function CategoryBadge({ category }: { category: string }) {
     Worker: "bg-secondary text-secondary-foreground border-secondary-border",
     Other: "bg-muted text-muted-foreground border-border",
   };
-  const labelKey = CATEGORY_LABEL_KEYS[category] ?? "cat_other";
+  const label = categoryLabel(category, lang, categorySettings);
+  const toneClass = tone[category] ?? tone.Other;
   return (
-    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", tone[category] ?? tone.Other)}>
-      {t(labelKey as any)}
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", toneClass)}>
+      {label}
     </span>
   );
 }
@@ -67,6 +60,18 @@ export default function ExpensesPage() {
   const [paidBy, setPaidBy] = useState<string>(ALL);
   const [sort, setSort] = useState<"date_desc" | "date_asc" | "amount_desc" | "amount_asc">("date_desc");
   const { toast } = useToast();
+
+  // Get unique categories from expenses + category_settings
+  const allCategories = useMemo(() => {
+    const fromSettings = categorySettings.map((c) => c.category);
+    const fromExpenses = Array.from(new Set((expenses ?? []).map((e) => e.category)));
+    const merged = Array.from(new Set([...fromSettings, ...fromExpenses]));
+    return merged.sort((a, b) => {
+      const aRow = categorySettings.find((c) => c.category === a);
+      const bRow = categorySettings.find((c) => c.category === b);
+      return (aRow?.sort_order ?? 9999) - (bRow?.sort_order ?? 9999);
+    });
+  }, [categorySettings, expenses]);
 
   const filtered = useMemo(() => {
     let list = expenses ?? [];
@@ -105,7 +110,7 @@ export default function ExpensesPage() {
   const entryWord = filtered.length === 1 ? t("entry") : t("entries");
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-7xl mx-auto">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{t("nav_expenses")}</div>
@@ -115,7 +120,7 @@ export default function ExpensesPage() {
           </p>
         </div>
         <Link href="/submit">
-          <Button data-testid="link-submit-from-expenses">{t("expenses_add_btn")}</Button>
+          <Button data-testid="link-submit-from-expenses" className="w-full sm:w-auto">{t("expenses_add_btn")}</Button>
         </Link>
       </div>
 
@@ -127,7 +132,7 @@ export default function ExpensesPage() {
             placeholder={t("search_placeholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="ps-9"
+            className="ps-9 w-full"
             data-testid="input-search"
           />
         </div>
@@ -135,7 +140,9 @@ export default function ExpensesPage() {
           <SelectTrigger data-testid="select-filter-category"><SelectValue placeholder={t("filter_all_categories")} /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>{t("filter_all_categories")}</SelectItem>
-            {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{t(CATEGORY_LABEL_KEYS[c] as any)}</SelectItem>)}
+            {allCategories.map((c) => (
+              <SelectItem key={c} value={c}>{categoryLabel(c, lang, categorySettings)}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={paidBy} onValueChange={setPaidBy}>
@@ -164,7 +171,7 @@ export default function ExpensesPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-16 text-center" data-testid="empty-expenses">
+        <div className="rounded-2xl border border-dashed border-border bg-card p-10 sm:p-16 text-center" data-testid="empty-expenses">
           <ReceiptText className="h-10 w-10 text-muted-foreground mx-auto" />
           <div className="mt-3 font-display font-bold text-lg">{t("empty_no_match")}</div>
           <p className="text-sm text-muted-foreground mt-1">{t("empty_no_match_hint")}</p>
@@ -184,6 +191,7 @@ export default function ExpensesPage() {
               <ExpenseCard
                 key={e.id}
                 expense={e}
+                categorySettings={categorySettings}
                 onDelete={() => del.mutate(e.id)}
                 deleting={del.isPending}
                 canAttach={canAttach}
@@ -197,9 +205,8 @@ export default function ExpensesPage() {
   );
 }
 
-function ExpenseCard({ expense, onDelete, deleting, canAttach, excluded }: { expense: Expense; onDelete: () => void; deleting: boolean; canAttach: boolean; excluded?: boolean }) {
+function ExpenseCard({ expense, categorySettings, onDelete, deleting, canAttach, excluded }: { expense: Expense; categorySettings: CategorySetting[]; onDelete: () => void; deleting: boolean; canAttach: boolean; excluded?: boolean }) {
   const { t, lang } = useLanguage();
-  // receipt_url is now a full Supabase public URL — use directly
   const receiptUrl = expense.receipt_url ?? null;
   const isImage = receiptUrl && /\.(jpe?g|png|gif|webp|heic)$/i.test(receiptUrl);
   const isPdf = receiptUrl && /\.pdf$/i.test(receiptUrl);
@@ -243,7 +250,7 @@ function ExpenseCard({ expense, onDelete, deleting, canAttach, excluded }: { exp
         )}
 
         <div className="absolute top-3 start-3 flex gap-1.5">
-          <CategoryBadge category={expense.category} />
+          <CategoryBadge category={expense.category} categorySettings={categorySettings} />
         </div>
         <div className="absolute top-3 end-3">
           <StatusPill status={expense.status} />

@@ -55,10 +55,14 @@ export interface Expense {
 export interface CategorySetting {
   category: string;
   included: boolean;
+  name_en: string;
+  name_ar: string;
+  sort_order: number;
   updated_at?: string | null;
 }
 
 // Categories that participate in budget calculations / inclusion toggles
+// These are the DEFAULT SEED values only — all code iterates over loaded category_settings rows
 export const BUDGET_CATEGORIES = ["Setup", "Rent", "Operating", "Other"] as const;
 
 // Per-category subtotal used by budget computations & live preview
@@ -77,7 +81,7 @@ export const insertExpenseSchema = z.object({
   date: z.string().min(1, "Date is required"),
   paid_by: z.enum(MEMBER_NAMES, { errorMap: () => ({ message: "Select a member" }) }),
   amount: z.coerce.number().positive("Amount must be greater than 0"),
-  category: z.enum(CATEGORIES),
+  category: z.string().min(1, "Category is required"),
   payment_method: z.enum(PAYMENT_METHODS),
   description: z.string().min(3, "Description must be at least 3 characters"),
   notes: z.string().optional().nullable(),

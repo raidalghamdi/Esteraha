@@ -53,7 +53,7 @@ export default function CharterPage() {
   const introText = governance?.charter_text || t("charter_intro_fallback");
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-4xl mx-auto space-y-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <div className="relative overflow-hidden rounded-2xl hero-brand text-white p-8 md:p-12 shadow-lg">
         {/* Decorative background pattern */}

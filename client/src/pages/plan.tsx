@@ -85,7 +85,7 @@ export default function PlanPage() {
   const planStartLocale = planStart.toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-US", { month: "long", year: "numeric" });
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-7xl mx-auto space-y-8">
       <div>
         <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{t("nav_plan")}</div>
         <h1 className="font-display text-xl font-bold mt-1">{t("plan_title")}</h1>

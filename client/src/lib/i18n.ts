@@ -322,6 +322,23 @@ export const translations = {
     col_category: "الفئة",
     col_status_contrib: "الحالة",
 
+
+    // v4.1 — Category management
+    edit_cat_name: 'تعديل الاسم',
+    add_category: 'إضافة فئة',
+    btn_add: 'إضافة',
+    cat_key_label: 'المعرّف (مفتاح الفئة)',
+    cat_name_en: 'الاسم بالإنجليزية',
+    cat_name_ar: 'الاسم بالعربية',
+    cat_cannot_delete: 'لا يمكن الحذف: هذه الفئة تحتوي على مصاريف',
+    cat_saved: 'تم الحفظ',
+    cat_saving: 'جاري الحفظ...',
+    delete_category: 'حذف الفئة',
+    cat_name_updated: 'تم تحديث اسم الفئة',
+    cat_add_success: 'تم إضافة الفئة',
+    cat_add_error: 'فشل إضافة الفئة',
+    cat_delete_success: 'تم حذف الفئة',
+    cat_delete_error: 'فشل حذف الفئة',
     // Misc
     currency: "ر.س",
     members_count: "9 أعضاء",
@@ -650,6 +667,23 @@ export const translations = {
     col_category: "Category",
     col_status_contrib: "Status",
 
+
+    // v4.1 — Category management
+    edit_cat_name: 'Edit name',
+    add_category: 'Add Category',
+    btn_add: 'Add',
+    cat_key_label: 'Category key',
+    cat_name_en: 'English name',
+    cat_name_ar: 'Arabic name',
+    cat_cannot_delete: 'Cannot delete: category has expenses',
+    cat_saved: 'Saved',
+    cat_saving: 'Saving…',
+    delete_category: 'Delete category',
+    cat_name_updated: 'Category name updated',
+    cat_add_success: 'Category added',
+    cat_add_error: 'Failed to add category',
+    cat_delete_success: 'Category deleted',
+    cat_delete_error: 'Failed to delete category',
     // Misc
     currency: "SAR",
     members_count: "9 members",

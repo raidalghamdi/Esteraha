@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { insertExpenseSchema, type InsertExpense, type Member, CATEGORIES, PAYMENT_METHODS } from "@shared/schema";
+import { insertExpenseSchema, type InsertExpense, type Member, PAYMENT_METHODS } from "@shared/schema";
+import type { CategorySetting } from "@shared/schema";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +17,7 @@ import { AvatarCircle } from "@/components/avatar-circle";
 import { formatSAR, formatDate } from "@/lib/format";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
-import { fetchMembers } from "@/lib/supabaseQueries";
+import { fetchMembers, fetchCategorySettings, categoryLabel } from "@/lib/supabaseQueries";
 import { useLanguage } from "@/lib/language-context";
 
 const formSchema = insertExpenseSchema.extend({
@@ -24,14 +25,6 @@ const formSchema = insertExpenseSchema.extend({
 });
 
 type FormValues = z.infer<typeof formSchema>;
-
-const CATEGORY_LABEL_KEYS: Record<string, string> = {
-  Rent: "cat_rent",
-  Setup: "cat_setup",
-  Operating: "cat_operating",
-  Worker: "cat_worker",
-  Other: "cat_other",
-};
 
 const PAYMENT_LABEL_KEYS: Record<string, string> = {
   Cash: "pay_cash",
@@ -51,6 +44,11 @@ export default function SubmitPage() {
   const { data: members } = useQuery<Member[]>({
     queryKey: ["members"],
     queryFn: fetchMembers,
+  });
+
+  const { data: categorySettings = [] } = useQuery<CategorySetting[]>({
+    queryKey: ["category_settings"],
+    queryFn: fetchCategorySettings,
   });
 
   const today = new Date().toISOString().slice(0, 10);
@@ -84,6 +82,11 @@ export default function SubmitPage() {
     }
     setFilePreview(null);
   }, [file]);
+
+  // Compute display label for selected category
+  const selectedCategoryLabel = watched.category
+    ? categoryLabel(watched.category, lang, categorySettings)
+    : "";
 
   const submit = useMutation({
     mutationFn: async (values: FormValues) => {
@@ -158,7 +161,7 @@ export default function SubmitPage() {
   const canSubmit = form.formState.isValid && !!file && !submit.isPending;
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-6xl mx-auto">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-6xl mx-auto">
       <div className="mb-8">
         <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{t("nav_submit")}</div>
         <h1 className="font-display text-xl font-bold mt-1">{t("submit_title")}</h1>
@@ -167,7 +170,7 @@ export default function SubmitPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Decorative left/right rail */}
-        <aside className="lg:col-span-1 space-y-4">
+        <aside className="lg:col-span-1 space-y-4 order-2 lg:order-1">
           <div className="rounded-2xl bg-brand-dark text-white p-6 shadow-md">
             <div className="flex items-center gap-2 text-primary mb-3">
               <Lock className="h-4 w-4" />
@@ -193,7 +196,7 @@ export default function SubmitPage() {
               <div className="min-w-0">
                 <div className="font-semibold truncate">{watched.paid_by || t("preview_member_placeholder")}</div>
                 <div className="text-xs text-muted-foreground">
-                  {watched.date ? formatDate(watched.date, lang) : t("preview_date_placeholder")}{watched.category ? ` · ${watched.category}` : ""}
+                  {watched.date ? formatDate(watched.date, lang) : t("preview_date_placeholder")}{watched.category ? ` · ${selectedCategoryLabel}` : ""}
                 </div>
               </div>
             </div>
@@ -211,7 +214,7 @@ export default function SubmitPage() {
         </aside>
 
         {/* Form */}
-        <div className="lg:col-span-2 rounded-2xl border border-card-border bg-card p-6 md:p-8 shadow-sm">
+        <div className="lg:col-span-2 rounded-2xl border border-card-border bg-card p-5 sm:p-6 md:p-8 shadow-sm order-1 lg:order-2">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" data-testid="form-submit-expense">
               <div className="grid gap-5 sm:grid-cols-2">
@@ -245,7 +248,7 @@ export default function SubmitPage() {
                     <FormItem>
                       <FormLabel>{t("field_date")}</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} data-testid="input-date" />
+                        <Input type="date" {...field} data-testid="input-date" className="w-full" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -267,6 +270,7 @@ export default function SubmitPage() {
                           {...field}
                           value={field.value ?? ""}
                           data-testid="input-amount"
+                          className="w-full"
                         />
                       </FormControl>
                       <FormMessage />
@@ -287,8 +291,10 @@ export default function SubmitPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {CATEGORIES.map((c) => (
-                            <SelectItem key={c} value={c}>{t(CATEGORY_LABEL_KEYS[c] as any)}</SelectItem>
+                          {categorySettings.map((cs) => (
+                            <SelectItem key={cs.category} value={cs.category}>
+                              {categoryLabel(cs.category, lang, categorySettings)}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -328,7 +334,7 @@ export default function SubmitPage() {
                   <FormItem>
                     <FormLabel>{t("field_description")}</FormLabel>
                     <FormControl>
-                      <Input placeholder={t("field_description_placeholder")} {...field} data-testid="input-description" />
+                      <Input placeholder={t("field_description_placeholder")} {...field} data-testid="input-description" className="w-full" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -342,7 +348,7 @@ export default function SubmitPage() {
                   <FormItem>
                     <FormLabel>{t("field_notes")}</FormLabel>
                     <FormControl>
-                      <Textarea rows={3} placeholder={t("field_notes_placeholder")} {...field} value={field.value ?? ""} data-testid="input-notes" />
+                      <Textarea rows={3} placeholder={t("field_notes_placeholder")} {...field} value={field.value ?? ""} data-testid="input-notes" className="w-full" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -377,15 +383,15 @@ export default function SubmitPage() {
                 ) : (
                   <div className="mt-2 rounded-xl border border-card-border bg-muted/30 p-3 flex items-center gap-3" data-testid="preview-receipt">
                     {filePreview ? (
-                      <img src={filePreview} alt="" className="h-16 w-16 rounded-md object-cover border border-border" />
+                      <img src={filePreview} alt="" className="h-16 w-16 rounded-md object-cover border border-border shrink-0" />
                     ) : (
-                      <div className="h-16 w-16 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
+                      <div className="h-16 w-16 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
                         <FileText className="h-7 w-7 text-primary" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm truncate flex items-center gap-1.5">
-                        {file.type === "application/pdf" ? <FileText className="h-3.5 w-3.5" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                        {file.type === "application/pdf" ? <FileText className="h-3.5 w-3.5 shrink-0" /> : <ImageIcon className="h-3.5 w-3.5 shrink-0" />}
                         {file.name}
                       </div>
                       <div className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB · {file.type || "file"}</div>
@@ -393,7 +399,7 @@ export default function SubmitPage() {
                     <button
                       type="button"
                       onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                      className="rounded-md p-1.5 hover:bg-muted text-muted-foreground"
+                      className="rounded-md p-1.5 hover:bg-muted text-muted-foreground shrink-0"
                       aria-label="Remove file"
                       data-testid="button-remove-receipt"
                     >
@@ -410,13 +416,13 @@ export default function SubmitPage() {
               </div>
 
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => navigate("/expenses")} data-testid="button-cancel">
+                <Button type="button" variant="outline" onClick={() => navigate("/expenses")} data-testid="button-cancel" className="w-full sm:w-auto">
                   {t("btn_cancel")}
                 </Button>
                 <Button
                   type="submit"
                   disabled={!canSubmit}
-                  className="min-w-[140px]"
+                  className="w-full sm:w-auto min-w-[140px]"
                   data-testid="button-submit"
                 >
                   {submit.isPending ? t("btn_submitting") : t("btn_submit")}

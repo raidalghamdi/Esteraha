@@ -11,6 +11,7 @@ import {
   fetchCategorySettings,
   getEffectivelyIncluded,
   computeSummary,
+  categoryLabel,
 } from "@/lib/supabaseQueries";
 import { AttachReceiptDialog } from "@/components/attach-receipt-dialog";
 import { MEMBER_NAMES, type MemberName } from "@shared/schema";
@@ -96,7 +97,7 @@ export default function MemberDetailPage() {
       : "text-foreground";
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-5xl mx-auto space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-5xl mx-auto space-y-6">
       {/* Back link */}
       <Link
         href="/"
@@ -169,7 +170,7 @@ export default function MemberDetailPage() {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-3 hidden sm:table-cell text-muted-foreground text-xs">{e.category}</td>
+                    <td className="py-3 px-3 hidden sm:table-cell text-muted-foreground text-xs">{categoryLabel(e.category, lang, categorySettings)}</td>
                     <td className="py-3 px-3 text-end tabular font-display font-bold">{formatSAR(e.amount, {}, lang)}</td>
                     <td className="py-3 px-5 hidden md:table-cell">
                       {e.receipt_url ? (

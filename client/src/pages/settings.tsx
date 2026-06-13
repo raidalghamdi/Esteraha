@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
-import { Sliders, CalendarCog, AlertTriangle, ListChecks, ChevronDown, Eye } from "lucide-react";
+import { Sliders, CalendarCog, AlertTriangle, ListChecks, ChevronDown, Eye, Plus, Trash2, Check, Loader2 } from "lucide-react";
 import { z } from "zod";
 import {
   fetchSettings,
@@ -22,6 +22,9 @@ import {
   setExpenseIncluded,
   getEffectivelyIncluded,
   computeSummary,
+  updateCategoryNames,
+  createCategory,
+  deleteCategory,
 } from "@/lib/supabaseQueries";
 import { useLanguage } from "@/lib/language-context";
 import { formatSAR, formatDate } from "@/lib/format";
@@ -82,7 +85,7 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6 md:p-10">
+      <div className="p-4 md:p-10">
         <div className="h-8 w-48 bg-muted animate-pulse rounded" />
         <div className="mt-6 h-80 rounded-xl bg-muted animate-pulse" />
       </div>
@@ -90,7 +93,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-5xl mx-auto">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-5xl mx-auto">
       <div className="mb-8">
         <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{t("nav_settings")}</div>
         <h1 className="font-display text-xl font-bold mt-1">{t("settings_title")}</h1>
@@ -126,7 +129,7 @@ export default function SettingsPage() {
           </SectionCard>
 
           <div className="flex justify-end gap-3">
-            <Button type="submit" disabled={save.isPending} data-testid="button-save-settings" className="min-w-[140px]">
+            <Button type="submit" disabled={save.isPending} data-testid="button-save-settings" className="w-full sm:w-auto min-w-[140px]">
               {save.isPending ? t("btn_saving") : t("btn_save")}
             </Button>
           </div>
@@ -141,7 +144,7 @@ export default function SettingsPage() {
       {/* ── Live preview ── */}
       {summary && (
         <div className="mt-8">
-          <LivePreview summary={summary} />
+          <LivePreview summary={summary} categorySettings={categorySettings} />
         </div>
       )}
     </div>
@@ -160,7 +163,7 @@ function InclusionSection({
   categorySettings: CategorySetting[];
   summary: Summary | null;
 }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { toast } = useToast();
 
   const catMutation = useMutation({
@@ -177,13 +180,63 @@ function InclusionSection({
     onError: (err: any) => toast({ title: t("inclusion_save_failed"), description: err.message, variant: "destructive" }),
   });
 
+  const nameMutation = useMutation({
+    mutationFn: ({ category, name_en, name_ar }: { category: string; name_en: string; name_ar: string }) =>
+      updateCategoryNames(category, name_en, name_ar),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["category_settings"] });
+      toast({ title: t("cat_name_updated") });
+    },
+    onError: (err: any) => toast({ title: t("inclusion_save_failed"), description: err.message, variant: "destructive" }),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: { category: string; name_en: string; name_ar: string }) =>
+      createCategory(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["category_settings"] });
+      toast({ title: t("cat_add_success") });
+    },
+    onError: (err: any) => toast({ title: t("cat_add_error"), description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (category: string) => deleteCategory(category),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["category_settings"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      toast({ title: t("cat_delete_success") });
+    },
+    onError: (err: any) => toast({ title: t("cat_delete_error"), description: err.message, variant: "destructive" }),
+  });
+
+  // Add category form state
+  const [addKey, setAddKey] = useState("");
+  const [addNameEn, setAddNameEn] = useState("");
+  const [addNameAr, setAddNameAr] = useState("");
+
   const subtotals = summary?.category_subtotals ?? [];
 
+  // Expense count per category (for delete guard)
+  const expCountByCat: Record<string, number> = {};
+  for (const e of expenses) {
+    expCountByCat[e.category] = (expCountByCat[e.category] ?? 0) + 1;
+  }
+
+  function handleAddCategory() {
+    const key = addKey.trim().replace(/\s+/g, " ");
+    if (!key || !addNameEn.trim() || !addNameAr.trim()) return;
+    createMutation.mutate({ category: key, name_en: addNameEn.trim(), name_ar: addNameAr.trim() });
+    setAddKey("");
+    setAddNameEn("");
+    setAddNameAr("");
+  }
+
   return (
-    <div className="rounded-2xl border border-card-border bg-card p-6 md:p-7 shadow-sm">
+    <div className="rounded-2xl border border-card-border bg-card p-4 sm:p-6 md:p-7 shadow-sm">
       <div className="flex items-start gap-3 mb-5 pb-4 border-b border-border">
-        <div className="rounded-md p-2 bg-primary/10 text-primary"><ListChecks className="h-4 w-4" /></div>
-        <div>
+        <div className="rounded-md p-2 bg-primary/10 text-primary shrink-0"><ListChecks className="h-4 w-4" /></div>
+        <div className="min-w-0">
           <h2 className="font-display text-lg font-bold leading-tight">{t("settings_categories_section")}</h2>
           <p className="text-sm text-muted-foreground">{t("settings_categories_section_sub")}</p>
         </div>
@@ -194,16 +247,86 @@ function InclusionSection({
       </div>
 
       <div className="space-y-3">
-        {subtotals.map((sub) => (
-          <CategoryRow
-            key={sub.category}
-            subtotal={sub}
-            expenses={expenses.filter((e) => e.category === sub.category)}
-            categorySettings={categorySettings}
-            onToggleCategory={(included) => catMutation.mutate({ category: sub.category, included })}
-            onToggleExpense={(id, included) => expMutation.mutate({ id, included })}
-          />
-        ))}
+        {subtotals.map((sub) => {
+          const catRow = categorySettings.find((c) => c.category === sub.category);
+          const hasExpenses = (expCountByCat[sub.category] ?? 0) > 0;
+          return (
+            <CategoryRow
+              key={sub.category}
+              subtotal={sub}
+              catRow={catRow}
+              expenses={expenses.filter((e) => e.category === sub.category)}
+              categorySettings={categorySettings}
+              hasExpenses={hasExpenses}
+              onToggleCategory={(included) => catMutation.mutate({ category: sub.category, included })}
+              onToggleExpense={(id, included) => expMutation.mutate({ id, included })}
+              onSaveNames={(name_en, name_ar) => nameMutation.mutate({ category: sub.category, name_en, name_ar })}
+              isSavingNames={nameMutation.isPending && (nameMutation.variables as any)?.category === sub.category}
+              onDeleteCategory={() => deleteMutation.mutate(sub.category)}
+              isDeletingCategory={deleteMutation.isPending}
+            />
+          );
+        })}
+      </div>
+
+      {/* Add Category Form */}
+      <div className="mt-6 pt-5 border-t border-border">
+        <div className="flex items-center gap-2 mb-3">
+          <Plus className="h-4 w-4 text-primary" />
+          <h3 className="font-display font-bold text-sm">
+            {lang === "ar" ? "إضافة فئة جديدة" : "Add New Category"}
+          </h3>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("cat_key_label")}</label>
+            <Input
+              placeholder={lang === "ar" ? "مثال: Cleaning" : "e.g. Cleaning"}
+              value={addKey}
+              onChange={(e) => setAddKey(e.target.value)}
+              className="text-sm"
+              data-testid="input-add-cat-key"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("cat_name_en")}</label>
+            <Input
+              placeholder="e.g. Cleaning"
+              value={addNameEn}
+              onChange={(e) => setAddNameEn(e.target.value)}
+              className="text-sm"
+              data-testid="input-add-cat-en"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("cat_name_ar")}</label>
+            <Input
+              dir="rtl"
+              placeholder="مثال: تنظيف"
+              value={addNameAr}
+              onChange={(e) => setAddNameAr(e.target.value)}
+              className="text-sm"
+              data-testid="input-add-cat-ar"
+            />
+          </div>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={!addKey.trim() || !addNameEn.trim() || !addNameAr.trim() || createMutation.isPending}
+            onClick={handleAddCategory}
+            data-testid="button-add-category"
+            className="w-full sm:w-auto"
+          >
+            {createMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin me-1.5" />
+            ) : (
+              <Plus className="h-3.5 w-3.5 me-1.5" />
+            )}
+            {lang === "ar" ? "إضافة فئة" : "Add Category"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -211,46 +334,71 @@ function InclusionSection({
 
 function CategoryRow({
   subtotal,
+  catRow,
   expenses,
   categorySettings,
+  hasExpenses,
   onToggleCategory,
   onToggleExpense,
+  onSaveNames,
+  isSavingNames,
+  onDeleteCategory,
+  isDeletingCategory,
 }: {
   subtotal: Summary["category_subtotals"][number];
+  catRow: CategorySetting | undefined;
   expenses: Expense[];
   categorySettings: CategorySetting[];
+  hasExpenses: boolean;
   onToggleCategory: (included: boolean) => void;
   onToggleExpense: (id: string, included: boolean) => void;
+  onSaveNames: (name_en: string, name_ar: string) => void;
+  isSavingNames: boolean;
+  onDeleteCategory: () => void;
+  isDeletingCategory: boolean;
 }) {
   const { t, lang } = useLanguage();
   const [open, setOpen] = useState(false);
+  const [editEn, setEditEn] = useState(catRow?.name_en ?? subtotal.category);
+  const [editAr, setEditAr] = useState(catRow?.name_ar ?? subtotal.category);
+  const [savedFlash, setSavedFlash] = useState(false);
   const catOn = subtotal.included;
   const countWord = subtotal.count === 1 ? t("expense_count_one") : t("expense_count_many");
   const sorted = [...expenses].sort((a, b) => b.date.localeCompare(a.date));
+  const displayLabel = lang === "ar"
+    ? (catRow?.name_ar || subtotal.category)
+    : (catRow?.name_en || subtotal.category);
+
+  function handleSaveNames() {
+    onSaveNames(editEn, editAr);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  }
 
   return (
     <div className="rounded-xl border border-border bg-background/60 overflow-hidden" data-testid={`category-row-${subtotal.category}`}>
-      <div className="flex items-center gap-3 p-3.5">
+      <div className="flex items-start gap-2 p-3 sm:p-3.5 flex-wrap sm:flex-nowrap">
         <Checkbox
           checked={catOn}
           onCheckedChange={(v) => onToggleCategory(!!v)}
           aria-label={subtotal.category}
           data-testid={`checkbox-category-${subtotal.category}`}
+          className="mt-0.5 shrink-0"
         />
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex flex-1 items-center justify-between gap-3 min-w-0 text-start"
+          className="flex flex-1 items-center justify-between gap-2 min-w-0 text-start"
           data-testid={`toggle-category-${subtotal.category}`}
         >
           <div className="flex items-center gap-2 min-w-0">
-            <span className={cn("font-display font-bold", !catOn && "opacity-50")}>{subtotal.category}</span>
-            <span className="text-xs text-muted-foreground">
+            <span className={cn("font-display font-bold truncate", !catOn && "opacity-50")}>{displayLabel}</span>
+            <span className="text-xs text-muted-foreground shrink-0">
               {subtotal.count} {countWord}
             </span>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-sm tabular font-semibold" data-testid={`text-included-amount-${subtotal.category}`}>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm tabular font-semibold hidden sm:inline" data-testid={`text-included-amount-${subtotal.category}`}>
               {formatSAR(subtotal.included_amount, { decimals: 0 }, lang)} {t("included_word")}
             </span>
             <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
@@ -265,6 +413,86 @@ function CategoryRow({
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger className="sr-only">toggle</CollapsibleTrigger>
         <CollapsibleContent>
+          {/* Name edit row */}
+          <div className="border-t border-border p-3 sm:p-3.5 bg-muted/30">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+              {t("edit_cat_name")}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex-1 min-w-0">
+                <label className="text-[10px] text-muted-foreground mb-0.5 block">{t("cat_name_en")}</label>
+                <Input
+                  value={editEn}
+                  onChange={(e) => setEditEn(e.target.value)}
+                  className="text-sm h-8"
+                  data-testid={`input-name-en-${subtotal.category}`}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className="text-[10px] text-muted-foreground mb-0.5 block">{t("cat_name_ar")}</label>
+                <Input
+                  dir="rtl"
+                  value={editAr}
+                  onChange={(e) => setEditAr(e.target.value)}
+                  className="text-sm h-8"
+                  data-testid={`input-name-ar-${subtotal.category}`}
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSaveNames}
+                  disabled={isSavingNames}
+                  className="h-8 shrink-0"
+                  data-testid={`button-save-names-${subtotal.category}`}
+                >
+                  {isSavingNames ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : savedFlash ? (
+                    <Check className="h-3.5 w-3.5 text-success" />
+                  ) : (
+                    <span className="text-xs">{t("btn_save_short")}</span>
+                  )}
+                </Button>
+                {!hasExpenses && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (confirm(lang === "ar" ? `هل تريد حذف فئة "${subtotal.category}"؟` : `Delete category "${subtotal.category}"?`)) {
+                        onDeleteCategory();
+                      }
+                    }}
+                    disabled={isDeletingCategory}
+                    className="h-8 shrink-0 text-destructive hover:bg-destructive/10 border-destructive/30"
+                    title={t("delete_category")}
+                    data-testid={`button-delete-cat-${subtotal.category}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {hasExpenses && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    className="h-8 shrink-0 text-muted-foreground border-muted opacity-50 cursor-not-allowed"
+                    title={t("cat_cannot_delete")}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            {isSavingNames && (
+              <div className="text-[10px] text-muted-foreground mt-1">{t("cat_saving")}</div>
+            )}
+          </div>
+
           <div className="border-t border-border divide-y divide-border/60">
             {sorted.length === 0 ? (
               <div className="p-3.5 text-xs text-muted-foreground">{t("expenses_inside_category")}: 0</div>
@@ -275,7 +503,7 @@ function CategoryRow({
                 return (
                   <div
                     key={e.id}
-                    className={cn("flex items-center gap-3 p-3 ps-9", !effIncluded && "opacity-60")}
+                    className={cn("flex items-center gap-2 p-3 ps-3 sm:ps-9 flex-wrap sm:flex-nowrap", !effIncluded && "opacity-60")}
                     data-testid={`expense-row-${e.id}`}
                   >
                     <Checkbox
@@ -286,7 +514,7 @@ function CategoryRow({
                       data-testid={`checkbox-expense-${e.id}`}
                     />
                     <div className="text-xs text-muted-foreground w-24 shrink-0 tabular">{formatDate(e.date, lang)}</div>
-                    <div className="text-xs font-medium w-16 shrink-0 truncate">{e.paid_by}</div>
+                    <div className="text-xs font-medium w-16 shrink-0 truncate hidden sm:block">{e.paid_by}</div>
                     <div className="text-sm tabular font-semibold w-20 shrink-0 text-end">
                       {formatSAR(e.amount, { decimals: 0, withSuffix: false }, lang)}
                     </div>
@@ -312,10 +540,17 @@ function CategoryRow({
 // ──────────────────────────────────────────
 // Live preview
 // ──────────────────────────────────────────
-function LivePreview({ summary }: { summary: Summary }) {
+function LivePreview({ summary, categorySettings }: { summary: Summary; categorySettings: CategorySetting[] }) {
   const { t, lang } = useLanguage();
+
+  function catDisplayLabel(categoryKey: string) {
+    const row = categorySettings.find((c) => c.category === categoryKey);
+    if (!row) return categoryKey;
+    return lang === "ar" ? (row.name_ar || categoryKey) : (row.name_en || categoryKey);
+  }
+
   return (
-    <div className="rounded-2xl border border-primary/30 premium-card p-6 md:p-7 shadow-sm" data-testid="live-preview">
+    <div className="rounded-2xl border border-primary/30 premium-card p-4 sm:p-6 md:p-7 shadow-sm" data-testid="live-preview">
       <div className="flex items-center gap-2 mb-5">
         <Eye className="h-4 w-4 text-primary" />
         <h2 className="font-display text-lg font-bold">{t("live_preview_title")}</h2>
@@ -327,7 +562,7 @@ function LivePreview({ summary }: { summary: Summary }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {summary.category_subtotals.map((s) => (
           <div key={s.category} className="rounded-xl bg-muted/50 border border-border p-3 text-center">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">{s.category}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1 truncate">{catDisplayLabel(s.category)}</div>
             <div className="font-display font-bold text-lg tabular" data-testid={`preview-cat-${s.category}`}>
               {formatSAR(s.included_amount, { decimals: 0, withSuffix: false }, lang)}
             </div>
@@ -356,10 +591,10 @@ function LivePreview({ summary }: { summary: Summary }) {
 
 function SectionCard({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-card-border bg-card p-6 md:p-7 shadow-sm">
+    <div className="rounded-2xl border border-card-border bg-card p-4 sm:p-6 md:p-7 shadow-sm">
       <div className="flex items-start gap-3 mb-5 pb-4 border-b border-border">
-        <div className="rounded-md p-2 bg-primary/10 text-primary">{icon}</div>
-        <div>
+        <div className="rounded-md p-2 bg-primary/10 text-primary shrink-0">{icon}</div>
+        <div className="min-w-0">
           <h2 className="font-display text-lg font-bold leading-tight">{title}</h2>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
@@ -384,7 +619,7 @@ function NumberField({ name, label, form }: { name: keyof FormValues; label: str
               {...field}
               value={field.value ?? ""}
               onChange={(e) => field.onChange(e.target.value === "" ? "" : Number(e.target.value))}
-              className="bg-warning/20 border-warning/40 focus-visible:ring-warning/40"
+              className="bg-warning/20 border-warning/40 focus-visible:ring-warning/40 w-full"
               data-testid={`input-${name}`}
             />
           </FormControl>
@@ -408,7 +643,7 @@ function DateField({ name, label, form }: { name: keyof FormValues; label: strin
               type="date"
               {...field}
               value={field.value ?? ""}
-              className="bg-warning/20 border-warning/40 focus-visible:ring-warning/40"
+              className="bg-warning/20 border-warning/40 focus-visible:ring-warning/40 w-full"
               data-testid={`input-${name}`}
             />
           </FormControl>

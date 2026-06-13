@@ -5,7 +5,7 @@
 
 import { supabase } from "./supabase";
 import type { Member, Settings, Expense, Summary, SummaryMember, CategorySetting, CategorySubtotal } from "@shared/schema";
-import { MEMBER_NAMES, BUDGET_CATEGORIES } from "@shared/schema";
+import { MEMBER_NAMES } from "@shared/schema";
 
 // ──────────────────────────────────────────
 // Types for new tables
@@ -115,7 +115,9 @@ export async function setExpenseIncluded(id: string, included: boolean): Promise
 export async function fetchCategorySettings(): Promise<CategorySetting[]> {
   const { data, error } = await supabase
     .from("category_settings")
-    .select("*");
+    .select("category, included, name_en, name_ar, sort_order, updated_at")
+    .order("sort_order", { ascending: true })
+    .order("category", { ascending: true });
   if (error) {
     console.warn("fetchCategorySettings:", error.message);
     return [];
@@ -127,6 +129,68 @@ export async function setCategoryIncluded(category: string, included: boolean): 
   const { error } = await supabase
     .from("category_settings")
     .update({ included, updated_at: new Date().toISOString() })
+    .eq("category", category);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateCategoryNames(
+  category: string,
+  name_en: string,
+  name_ar: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("category_settings")
+    .update({ name_en, name_ar, updated_at: new Date().toISOString() })
+    .eq("category", category);
+  if (error) throw new Error(error.message);
+}
+
+export async function createCategory(payload: {
+  category: string;
+  name_en: string;
+  name_ar: string;
+  sort_order?: number;
+}): Promise<void> {
+  const key = payload.category.trim().replace(/\s+/g, " ");
+  if (!key) throw new Error("Category key cannot be empty");
+
+  // If sort_order not provided, compute max + 1
+  let sort_order = payload.sort_order;
+  if (sort_order === undefined) {
+    const { data: existing } = await supabase
+      .from("category_settings")
+      .select("sort_order")
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const maxSort = (existing?.[0] as any)?.sort_order ?? 0;
+    sort_order = maxSort + 1;
+  }
+
+  const { error } = await supabase.from("category_settings").insert({
+    category: key,
+    included: true,
+    name_en: payload.name_en,
+    name_ar: payload.name_ar,
+    sort_order,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteCategory(category: string): Promise<void> {
+  // Check that no expenses use this category
+  const { data: exps, error: checkErr } = await supabase
+    .from("expenses")
+    .select("id")
+    .eq("category", category)
+    .limit(1);
+  if (checkErr) throw new Error(checkErr.message);
+  if ((exps ?? []).length > 0) {
+    throw new Error("Cannot delete: category has expenses");
+  }
+  const { error } = await supabase
+    .from("category_settings")
+    .delete()
     .eq("category", category);
   if (error) throw new Error(error.message);
 }
@@ -352,8 +416,24 @@ export function computeSummary(
     .filter((e) => e.category === "Setup")
     .reduce((s, e) => s + e.amount, 0);
 
-  // Per-category subtotals (used by live preview & budget targets)
-  const category_subtotals: CategorySubtotal[] = BUDGET_CATEGORIES.map((category) => {
+  // Per-category subtotals — dynamically built from loaded category_settings
+  // We include any category that appears in either expenses OR category_settings
+  const allCategoryKeys = Array.from(new Set([
+    ...categorySettings.map((cs) => cs.category),
+    ...expenses.map((e) => e.category),
+  ]));
+
+  // Sort by sort_order (from category_settings), then alphabetically
+  allCategoryKeys.sort((a, b) => {
+    const aRow = categorySettings.find((c) => c.category === a);
+    const bRow = categorySettings.find((c) => c.category === b);
+    const aSort = aRow?.sort_order ?? 9999;
+    const bSort = bRow?.sort_order ?? 9999;
+    if (aSort !== bSort) return aSort - bSort;
+    return a.localeCompare(b);
+  });
+
+  const category_subtotals: CategorySubtotal[] = allCategoryKeys.map((category) => {
     const inCat = expenses.filter((e) => e.category === category);
     const included = categoryIncluded(category, categorySettings);
     const effIncluded = inCat.filter((e) => getEffectivelyIncluded(e, categorySettings));
@@ -435,4 +515,17 @@ export function computeMonthlyTarget(settings: Settings): number {
     settings.setup_cost +
     (settings.monthly_operating + settings.worker_monthly) * 12;
   return Math.round(annual_budget / 9 / 12);
+}
+
+// ──────────────────────────────────────────
+// Category label helper
+// ──────────────────────────────────────────
+export function categoryLabel(
+  categoryKey: string,
+  lang: "ar" | "en",
+  categorySettings: CategorySetting[]
+): string {
+  const row = categorySettings.find((c) => c.category === categoryKey);
+  if (!row) return categoryKey;
+  return lang === "ar" ? (row.name_ar || categoryKey) : (row.name_en || categoryKey);
 }

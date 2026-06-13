@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -22,6 +22,7 @@ import { fetchGovernance } from "@/lib/supabaseQueries";
 import { MEMBER_NAMES, type MemberName } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 function Logo({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { t } = useLanguage();
@@ -125,10 +126,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 
+  const sidebarContent = (
+    <div className="flex flex-col gap-4 h-full bg-sidebar text-sidebar-foreground p-5">
+      {/* Logo + language toggle at top */}
+      <div className="flex items-start justify-between gap-2">
+        <Logo variant="dark" />
+        <button
+          type="button"
+          onClick={toggleLang}
+          aria-label="Toggle language"
+          data-testid="button-lang-toggle"
+          className="shrink-0 rounded-md px-2 py-1.5 text-[11px] font-semibold text-secondary/85 hover:text-white hover:bg-white/5 transition-colors border border-white/10 whitespace-nowrap"
+        >
+          {t("lang_toggle")}
+        </button>
+      </div>
+
+      {/* Member picker */}
+      {memberPicker}
+
+      <div className="flex-1 overflow-y-auto">{navList}</div>
+
+      <div className="flex items-center justify-between border-t border-white/10 pt-4">
+        <div className="text-xs leading-snug">
+          <div className="font-semibold text-white">{t("members_count")}</div>
+          <div className="text-secondary/70">{t("members_location")}</div>
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Toggle theme"
+          data-testid="button-theme-toggle"
+          className="rounded-md p-2 text-secondary/85 hover:text-white hover:bg-white/5 transition-colors"
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-background text-foreground">
       {/* Sidebar (desktop) — use start-0 so it's on the correct side in RTL */}
-      <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col bg-sidebar text-sidebar-foreground border-e border-sidebar-border p-5 gap-4 sticky top-0 h-screen">
+      <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col bg-sidebar text-sidebar-foreground border-e border-sidebar-border p-5 gap-4 sticky top-0 h-screen overflow-y-auto">
         {/* Logo + language toggle at top */}
         <div className="flex items-start justify-between gap-2">
           <Logo variant="dark" />
@@ -166,7 +206,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile header */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-brand-dark text-white sticky top-0 z-30 border-b border-white/10">
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-sidebar text-sidebar-foreground sticky top-0 z-30 border-b border-white/10">
         <Logo variant="dark" />
         <div className="flex items-center gap-1">
           {/* Language toggle */}
@@ -194,19 +234,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             data-testid="button-menu"
             className="rounded-md p-2 text-secondary/85 hover:text-white hover:bg-white/5"
           >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <Menu className="h-5 w-5" />
           </button>
         </div>
       </header>
 
-      {mobileOpen && (
-        <div className="md:hidden bg-brand-dark text-white px-4 py-4 border-b border-white/10 space-y-3">
-          {memberPicker}
-          {navList}
-        </div>
-      )}
+      {/* Mobile drawer via Sheet */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent
+          side={lang === "ar" ? "right" : "left"}
+          className="w-72 p-0 bg-sidebar border-sidebar-border [&>button]:text-sidebar-foreground [&>button]:hover:bg-white/10"
+        >
+          {sidebarContent}
+        </SheetContent>
+      </Sheet>
 
-      <main className="flex-1 min-w-0">{children}</main>
+      <main className="flex-1 min-w-0 overflow-x-hidden">{children}</main>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import type { Summary, Expense } from "@shared/schema";
 import { formatSAR, formatDate } from "@/lib/format";
 import { AvatarCircle } from "@/components/avatar-circle";
 import { cn } from "@/lib/utils";
-import { fetchExpenses, fetchSettings, fetchContributions, fetchCategorySettings, computeSummary } from "@/lib/supabaseQueries";
+import { fetchExpenses, fetchSettings, fetchContributions, fetchCategorySettings, computeSummary, categoryLabel } from "@/lib/supabaseQueries";
 import { useLanguage } from "@/lib/language-context";
 import {
   Dialog,
@@ -154,7 +154,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-5 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-5 md:py-8 lg:py-10 max-w-7xl mx-auto space-y-8">
       {/* Hero KPI band */}
       <section className="grid gap-5 lg:grid-cols-3">
         {/* Hero card: 2 cols */}
@@ -435,7 +435,7 @@ export default function DashboardPage() {
                     <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-1.5">
                       <span>{e.paid_by}</span>
                       <span>·</span>
-                      <span className="text-accent font-medium">{e.category}</span>
+                      <span className="text-accent font-medium">{categoryLabel(e.category, lang, categorySettings)}</span>
                       <span>·</span>
                       <span>{formatDate(e.date, lang)}</span>
                     </div>
