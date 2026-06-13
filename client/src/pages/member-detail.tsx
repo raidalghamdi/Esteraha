@@ -8,6 +8,8 @@ import {
   fetchSettings,
   fetchContributionsByMember,
   fetchGovernance,
+  fetchCategorySettings,
+  getEffectivelyIncluded,
   computeSummary,
 } from "@/lib/supabaseQueries";
 import { AttachReceiptDialog } from "@/components/attach-receipt-dialog";
@@ -57,6 +59,7 @@ export default function MemberDetailPage() {
     enabled: isValidMember,
   });
   const { data: governance } = useQuery({ queryKey: ["governance"], queryFn: fetchGovernance });
+  const { data: categorySettings = [] } = useQuery({ queryKey: ["category_settings"], queryFn: fetchCategorySettings });
   const budgetController = governance?.budget_controller ?? "Raid";
 
   const approvedContributions = useMemo(
@@ -66,8 +69,8 @@ export default function MemberDetailPage() {
 
   const summary = useMemo(() => {
     if (!settings) return null;
-    return computeSummary(expenses, settings, approvedContributions);
-  }, [expenses, settings, approvedContributions]);
+    return computeSummary(expenses, settings, approvedContributions, categorySettings);
+  }, [expenses, settings, approvedContributions, categorySettings]);
 
   const memberSummary = summary?.members.find((m) => m.name === memberName);
   const memberExpenses = expenses.filter((e) => e.status === "Paid" && e.paid_by === memberName);
@@ -153,10 +156,19 @@ export default function MemberDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {memberExpenses.map((e) => (
-                  <tr key={e.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
+                {memberExpenses.map((e) => {
+                  const effIncluded = getEffectivelyIncluded(e, categorySettings);
+                  return (
+                  <tr key={e.id} className={cn("border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors", !effIncluded && "opacity-60")}>
                     <td className="py-3 px-5 text-muted-foreground text-xs">{formatDate(e.date, lang)}</td>
-                    <td className="py-3 px-3 font-semibold">{e.description}</td>
+                    <td className="py-3 px-3 font-semibold">
+                      {e.description}
+                      {!effIncluded && (
+                        <span className="ms-2 inline-flex items-center rounded-full bg-muted text-muted-foreground border border-border px-1.5 py-0.5 text-[9px] font-semibold align-middle" data-testid={`badge-excluded-${e.id}`}>
+                          {t("excluded_from_category_budget")}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 px-3 hidden sm:table-cell text-muted-foreground text-xs">{e.category}</td>
                     <td className="py-3 px-3 text-end tabular font-display font-bold">{formatSAR(e.amount, {}, lang)}</td>
                     <td className="py-3 px-5 hidden md:table-cell">
@@ -186,7 +198,8 @@ export default function MemberDetailPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

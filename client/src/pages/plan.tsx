@@ -5,7 +5,8 @@ import { MEMBER_NAMES } from "@shared/schema";
 import { formatSAR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CalendarDays, TrendingUp, PiggyBank } from "lucide-react";
-import { fetchExpenses, fetchSettings, computeSummary } from "@/lib/supabaseQueries";
+import { fetchExpenses, fetchSettings, fetchCategorySettings, getEffectivelyIncluded, computeSummary } from "@/lib/supabaseQueries";
+import type { CategorySetting } from "@shared/schema";
 import { useLanguage } from "@/lib/language-context";
 
 function monthLabel(year: number, monthIndex: number, lang: "ar" | "en") {
@@ -21,11 +22,12 @@ export default function PlanPage() {
 
   const { data: settings } = useQuery<Settings>({ queryKey: ["settings"], queryFn: fetchSettings });
   const { data: expenses } = useQuery<Expense[]>({ queryKey: ["expenses"], queryFn: fetchExpenses });
+  const { data: categorySettings = [] } = useQuery<CategorySetting[]>({ queryKey: ["category_settings"], queryFn: fetchCategorySettings });
 
   const summary = useMemo<Summary | null>(() => {
     if (!expenses || !settings) return null;
-    return computeSummary(expenses, settings);
-  }, [expenses, settings]);
+    return computeSummary(expenses, settings, [], categorySettings);
+  }, [expenses, settings, categorySettings]);
 
   if (!settings || !expenses || !summary) {
     return (
@@ -53,9 +55,10 @@ export default function PlanPage() {
     });
   }
 
-  // Aggregate actual expenses per month/category
+  // Aggregate actual expenses per month/category — budget side: only effectively-included
   const actuals: Record<string, { total: number; byCat: Record<string, number> }> = {};
   for (const e of expenses) {
+    if (!getEffectivelyIncluded(e, categorySettings)) continue;
     const d = new Date(e.date);
     const key = ymKey(d.getFullYear(), d.getMonth());
     if (!actuals[key]) actuals[key] = { total: 0, byCat: {} };
@@ -68,7 +71,7 @@ export default function PlanPage() {
     const isFirstRent = m.year === firstRent.getFullYear() && m.monthIndex === firstRent.getMonth();
     const isSecondRent = m.year === secondRent.getFullYear() && m.monthIndex === secondRent.getMonth();
     const planned_rent = isFirstRent || isSecondRent ? settings.annual_rent / 2 : 0;
-    const planned_setup = isFirstRent ? settings.setup_cost : 0;
+    const planned_setup = isFirstRent ? (summary.setup_included_total > 0 ? summary.setup_included_total : settings.setup_cost) : 0;
     const planned_operating = settings.monthly_operating;
     const planned_worker = settings.worker_monthly;
     const planned_total = planned_rent + planned_setup + planned_operating + planned_worker;

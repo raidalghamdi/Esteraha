@@ -4,8 +4,8 @@
  */
 
 import { supabase } from "./supabase";
-import type { Member, Settings, Expense, Summary, SummaryMember } from "@shared/schema";
-import { MEMBER_NAMES } from "@shared/schema";
+import type { Member, Settings, Expense, Summary, SummaryMember, CategorySetting, CategorySubtotal } from "@shared/schema";
+import { MEMBER_NAMES, BUDGET_CATEGORIES } from "@shared/schema";
 
 // ──────────────────────────────────────────
 // Types for new tables
@@ -98,6 +98,36 @@ export async function fetchExpenses(): Promise<Expense[]> {
 
 export async function deleteExpense(id: string): Promise<void> {
   const { error } = await supabase.from("expenses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function setExpenseIncluded(id: string, included: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("expenses")
+    .update({ included_in_budget: included })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ──────────────────────────────────────────
+// Category settings (per-category inclusion)
+// ──────────────────────────────────────────
+export async function fetchCategorySettings(): Promise<CategorySetting[]> {
+  const { data, error } = await supabase
+    .from("category_settings")
+    .select("*");
+  if (error) {
+    console.warn("fetchCategorySettings:", error.message);
+    return [];
+  }
+  return (data ?? []) as CategorySetting[];
+}
+
+export async function setCategoryIncluded(category: string, included: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("category_settings")
+    .update({ included, updated_at: new Date().toISOString() })
+    .eq("category", category);
   if (error) throw new Error(error.message);
 }
 
@@ -270,14 +300,44 @@ export async function attachReceiptToContribution(contributionId: string, public
 }
 
 // ──────────────────────────────────────────
+// Inclusion helper (v4)
+// ──────────────────────────────────────────
+// An expense counts toward BUDGET-side computations only when:
+//   - it is approved (expenses have no approval workflow → status !== 'Rejected'
+//     and approval_status is 'Approved' or null/undefined)
+//   - its own included_in_budget flag is true
+//   - its category's category_settings.included is true
+export function getEffectivelyIncluded(
+  expense: Expense,
+  categorySettings: CategorySetting[] = []
+): boolean {
+  const approvalStatus = (expense as any).approval_status as string | null | undefined;
+  const approved = approvalStatus == null || approvalStatus === "Approved";
+  if (!approved) return false;
+  if (expense.included_in_budget === false) return false;
+  const cat = categorySettings.find((c) => c.category === expense.category);
+  // If no row for the category, treat it as included (default true)
+  if (cat && cat.included === false) return false;
+  return true;
+}
+
+function categoryIncluded(category: string, categorySettings: CategorySetting[]): boolean {
+  const cat = categorySettings.find((c) => c.category === category);
+  return cat ? cat.included !== false : true;
+}
+
+// ──────────────────────────────────────────
 // Summary (computed client-side)
 // ──────────────────────────────────────────
 export function computeSummary(
   expenses: Expense[],
   settings: Settings,
-  approvedContributions: Contribution[] = []
+  approvedContributions: Contribution[] = [],
+  categorySettings: CategorySetting[] = []
 ): Summary {
+  // ── Grand total: ALL recorded expenses, independent of inclusion ──
   const total_expenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const grand_total_all = total_expenses;
   const total_paid = expenses
     .filter((e) => e.status === "Paid")
     .reduce((s, e) => s + e.amount, 0);
@@ -285,10 +345,35 @@ export function computeSummary(
     .filter((e) => e.status === "Unpaid")
     .reduce((s, e) => s + e.amount, 0);
 
+  // ── Budget side: only effectively-included expenses ──
+  const includedExpenses = expenses.filter((e) => getEffectivelyIncluded(e, categorySettings));
+  const included_total = includedExpenses.reduce((s, e) => s + e.amount, 0);
+  const setup_included_total = includedExpenses
+    .filter((e) => e.category === "Setup")
+    .reduce((s, e) => s + e.amount, 0);
+
+  // Per-category subtotals (used by live preview & budget targets)
+  const category_subtotals: CategorySubtotal[] = BUDGET_CATEGORIES.map((category) => {
+    const inCat = expenses.filter((e) => e.category === category);
+    const included = categoryIncluded(category, categorySettings);
+    const effIncluded = inCat.filter((e) => getEffectivelyIncluded(e, categorySettings));
+    return {
+      category,
+      included,
+      count: inCat.length,
+      included_count: effIncluded.length,
+      excluded_count: inCat.length - effIncluded.length,
+      included_amount: effIncluded.reduce((s, e) => s + e.amount, 0),
+      total_amount: inCat.reduce((s, e) => s + e.amount, 0),
+    };
+  });
+
+  // Per-member "total paid" / "who paid what" KPIs use ALL approved expenses
+  // regardless of inclusion (kept under the grand total of everything).
   const per_member_share = total_paid / MEMBER_NAMES.length;
 
   const members: SummaryMember[] = MEMBER_NAMES.map((name) => {
-    // Direct expenses paid by this member
+    // Direct expenses paid by this member (ALL paid, inclusion-independent)
     const directPaid = expenses
       .filter((e) => e.status === "Paid" && e.paid_by === name)
       .reduce((s, e) => s + e.amount, 0);
@@ -308,7 +393,10 @@ export function computeSummary(
     settings.annual_rent +
     settings.monthly_operating * 12 +
     settings.worker_monthly * 12;
-  const first_year_total = annual_budget + settings.setup_cost;
+  // First-year total uses the dynamic (inclusion-based) Setup total when there
+  // are recorded Setup expenses, otherwise falls back to the reference setup_cost.
+  const dynamicSetup = setup_included_total > 0 ? setup_included_total : settings.setup_cost;
+  const first_year_total = annual_budget + dynamicSetup;
 
   const second_rent_due = settings.annual_rent / 2;
   const today = new Date();
@@ -331,6 +419,10 @@ export function computeSummary(
     second_rent_due,
     months_until_2nd_rent,
     monthly_save_needed,
+    grand_total_all,
+    included_total,
+    setup_included_total,
+    category_subtotals,
   };
 }
 

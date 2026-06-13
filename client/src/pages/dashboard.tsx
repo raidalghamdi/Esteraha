@@ -6,7 +6,7 @@ import type { Summary, Expense } from "@shared/schema";
 import { formatSAR, formatDate } from "@/lib/format";
 import { AvatarCircle } from "@/components/avatar-circle";
 import { cn } from "@/lib/utils";
-import { fetchExpenses, fetchSettings, fetchContributions, computeSummary } from "@/lib/supabaseQueries";
+import { fetchExpenses, fetchSettings, fetchContributions, fetchCategorySettings, computeSummary } from "@/lib/supabaseQueries";
 import { useLanguage } from "@/lib/language-context";
 import {
   Dialog,
@@ -114,6 +114,10 @@ export default function DashboardPage() {
     queryKey: ["contributions"],
     queryFn: fetchContributions,
   });
+  const { data: categorySettings = [] } = useQuery({
+    queryKey: ["category_settings"],
+    queryFn: fetchCategorySettings,
+  });
 
   const approvedContributions = useMemo(
     () => allContributions.filter((c) => c.status === "Approved"),
@@ -122,8 +126,8 @@ export default function DashboardPage() {
 
   const summary = useMemo<Summary | null>(() => {
     if (!expenses || !settings) return null;
-    return computeSummary(expenses, settings, approvedContributions);
-  }, [expenses, settings, approvedContributions]);
+    return computeSummary(expenses, settings, approvedContributions, categorySettings);
+  }, [expenses, settings, approvedContributions, categorySettings]);
 
   const isLoading = loadingExpenses || loadingSettings;
 

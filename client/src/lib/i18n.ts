@@ -191,6 +191,26 @@ export const translations = {
     settings_saved: "تم حفظ الإعدادات",
     settings_save_failed: "فشل حفظ الإعدادات",
 
+    // v4 — Inclusion toggles
+    reference_setup_budget: "ميزانية التضبيط المرجعية — لمرة واحدة (ر.س)",
+    settings_categories_section: "شمول الفئات والمصاريف",
+    settings_categories_section_sub: "تحكّم في الفئات والمصاريف المحتسبة في الميزانية.",
+    categories_included_in_budget: "الفئات المحتسبة في الميزانية",
+    expenses_inside_category: "المصاريف داخل الفئة",
+    included_count: "محتسبة",
+    excluded_count: "مستثناة",
+    expense_count_one: "مصروف",
+    expense_count_many: "مصاريف",
+    included_word: "محتسب",
+    live_preview_title: "معاينة مباشرة",
+    included_by_category: "المحتسب في الميزانية حسب الفئة",
+    dynamic_setup_total: "تضبيط (إجمالي التضبيط المحتسب)",
+    grand_total_all_expenses: "الإجمالي الكلي لجميع المصاريف المسجلة",
+    grand_total_note: "لا يتغيّر هذا الرقم عند تبديل الشمول — تعتمد عليه إجماليات ما دفعه كل عضو.",
+    excluded_from_category_budget: "مستثناة من ميزانية الفئة",
+    category_off_hint: "الفئة مُطفأة — كل مصاريفها مستثناة من الميزانية.",
+    inclusion_save_failed: "فشل تحديث الشمول",
+
     // Navigation (new)
     nav_contribute: "دفع المساهمة الشهرية",
     nav_admin: "مراقب الميزانية",
@@ -498,6 +518,26 @@ export const translations = {
     btn_saving: "Saving…",
     settings_saved: "Saved",
     settings_save_failed: "Save failed",
+
+    // v4 — Inclusion toggles
+    reference_setup_budget: "Reference Setup Budget — one-time (SAR)",
+    settings_categories_section: "Category & Expense Inclusion",
+    settings_categories_section_sub: "Control which categories and expenses count toward the budget.",
+    categories_included_in_budget: "Categories included in budget calculations",
+    expenses_inside_category: "Expenses inside category",
+    included_count: "included",
+    excluded_count: "excluded",
+    expense_count_one: "expense",
+    expense_count_many: "expenses",
+    included_word: "included",
+    live_preview_title: "Live preview",
+    included_by_category: "Included in budget by category",
+    dynamic_setup_total: "تضبيط (included Setup total)",
+    grand_total_all_expenses: "Grand total of ALL recorded expenses",
+    grand_total_note: "This number does NOT change when you toggle inclusion. Per-member ‘total paid’ KPIs draw from this.",
+    excluded_from_category_budget: "Excluded from category budget",
+    category_off_hint: "Category is off — all its expenses are excluded from the budget.",
+    inclusion_save_failed: "Failed to update inclusion",
 
     // Navigation (new)
     nav_contribute: "Pay Monthly Contribution",

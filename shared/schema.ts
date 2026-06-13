@@ -47,8 +47,30 @@ export interface Expense {
   receipt_url: string | null;
   receipt_filename: string | null;
   status: string;
+  included_in_budget: boolean;
   created_at: string;
 }
+
+// Per-category inclusion toggle (category_settings table)
+export interface CategorySetting {
+  category: string;
+  included: boolean;
+  updated_at?: string | null;
+}
+
+// Categories that participate in budget calculations / inclusion toggles
+export const BUDGET_CATEGORIES = ["Setup", "Rent", "Operating", "Other"] as const;
+
+// Per-category subtotal used by budget computations & live preview
+export type CategorySubtotal = {
+  category: string;
+  included: boolean; // category_settings.included
+  count: number; // number of expenses in this category
+  included_count: number; // number of effectively-included expenses
+  excluded_count: number; // number excluded (category off OR row off)
+  included_amount: number; // sum of effectively-included amounts
+  total_amount: number; // sum of ALL amounts in this category
+};
 
 // Validation schemas
 export const insertExpenseSchema = z.object({
@@ -96,4 +118,9 @@ export type Summary = {
   second_rent_due: number;
   months_until_2nd_rent: number;
   monthly_save_needed: number;
+  // ── v4: inclusion-based figures ──
+  grand_total_all: number; // sum of ALL recorded expenses, independent of inclusion
+  included_total: number; // sum of all effectively-included expenses (budget side)
+  setup_included_total: number; // dynamic تضبيط — effectively-included Setup total
+  category_subtotals: CategorySubtotal[];
 };

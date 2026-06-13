@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import type { Expense } from "@shared/schema";
+import type { Expense, CategorySetting } from "@shared/schema";
 import { CATEGORIES, MEMBER_NAMES } from "@shared/schema";
 import { formatSAR, formatDate } from "@/lib/format";
 import { AvatarCircle } from "@/components/avatar-circle";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { useLanguage } from "@/lib/language-context";
 import { useMember } from "@/lib/member-context";
-import { fetchExpenses, deleteExpense, fetchGovernance } from "@/lib/supabaseQueries";
+import { fetchExpenses, deleteExpense, fetchGovernance, fetchCategorySettings, getEffectivelyIncluded } from "@/lib/supabaseQueries";
 import { AttachReceiptDialog } from "@/components/attach-receipt-dialog";
 
 const ALL = "__ALL__";
@@ -60,6 +60,7 @@ export default function ExpensesPage() {
     queryFn: fetchExpenses,
   });
   const { data: governance } = useQuery({ queryKey: ["governance"], queryFn: fetchGovernance });
+  const { data: categorySettings = [] } = useQuery<CategorySetting[]>({ queryKey: ["category_settings"], queryFn: fetchCategorySettings });
   const budgetController = governance?.budget_controller ?? "Raid";
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL);
@@ -178,6 +179,7 @@ export default function ExpensesPage() {
               !e.receipt_url &&
               !!currentMember &&
               (currentMember === e.paid_by || currentMember === budgetController);
+            const effIncluded = getEffectivelyIncluded(e, categorySettings);
             return (
               <ExpenseCard
                 key={e.id}
@@ -185,6 +187,7 @@ export default function ExpensesPage() {
                 onDelete={() => del.mutate(e.id)}
                 deleting={del.isPending}
                 canAttach={canAttach}
+                excluded={!effIncluded}
               />
             );
           })}
@@ -194,7 +197,7 @@ export default function ExpensesPage() {
   );
 }
 
-function ExpenseCard({ expense, onDelete, deleting, canAttach }: { expense: Expense; onDelete: () => void; deleting: boolean; canAttach: boolean }) {
+function ExpenseCard({ expense, onDelete, deleting, canAttach, excluded }: { expense: Expense; onDelete: () => void; deleting: boolean; canAttach: boolean; excluded?: boolean }) {
   const { t, lang } = useLanguage();
   // receipt_url is now a full Supabase public URL — use directly
   const receiptUrl = expense.receipt_url ?? null;
@@ -203,7 +206,10 @@ function ExpenseCard({ expense, onDelete, deleting, canAttach }: { expense: Expe
 
   return (
     <div
-      className="group rounded-2xl border border-card-border bg-card shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all"
+      className={cn(
+        "group rounded-2xl border border-card-border bg-card shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all",
+        excluded && "opacity-60",
+      )}
       data-testid={`card-expense-${expense.id}`}
     >
       {/* Receipt thumbnail */}
@@ -248,6 +254,11 @@ function ExpenseCard({ expense, onDelete, deleting, canAttach }: { expense: Expe
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="font-semibold truncate">{expense.description}</div>
+            {excluded && (
+              <span className="mt-1 inline-flex items-center rounded-full bg-muted text-muted-foreground border border-border px-1.5 py-0.5 text-[9px] font-semibold" data-testid={`badge-excluded-${expense.id}`}>
+                {t("excluded_from_category_budget")}
+              </span>
+            )}
             <div className="text-xs text-muted-foreground mt-0.5">{formatDate(expense.date, lang)} · {expense.payment_method}</div>
           </div>
           <div className="text-end shrink-0">
